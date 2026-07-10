@@ -1,57 +1,9 @@
 const path = require("path");
-const fs = require("fs");
 const { getConfig } = require("./src/config");
 const { readAccounts, formatDuration } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { openSettings } = require("./src/settings");
-
-let fileWatcher = null;
-
-function stopWatchingAccountFile() {
-    if (fileWatcher) {
-        fileWatcher.close();
-        fileWatcher = null;
-    }
-}
-
-function startWatchingAccountFile(onChangeCallback) {
-    stopWatchingAccountFile();
-
-    const config = getConfig();
-    const accountFilePath = config.accountFile;
-
-    if (!fs.existsSync(accountFilePath)) {
-        return;
-    }
-
-    let debounceTimer = null;
-
-    try {
-        fileWatcher = fs.watch(accountFilePath, (eventType, filename) => {
-            if (eventType === "change") {
-                if (debounceTimer) {
-                    clearTimeout(debounceTimer);
-                }
-
-                debounceTimer = setTimeout(() => {
-                    try {
-                        onChangeCallback();
-                    } catch (error) {
-                        console.error(`\n⚠️  Error updating menu: ${error.message}`);
-                    }
-                }, 300);
-            }
-        });
-
-        fileWatcher.on("error", (error) => {
-            console.error(`\n⚠️  File watcher error: ${error.message}`);
-            stopWatchingAccountFile();
-        });
-    } catch (error) {
-        console.error(`\n⚠️  Could not watch file: ${error.message}`);
-    }
-}
 
 async function waitForEnter() {
     const inquirer = (await import("inquirer")).default;
@@ -62,6 +14,19 @@ async function waitForEnter() {
             message: "Press Enter to return to menu...",
         },
     ]);
+}
+
+async function confirmAccountChanges(oldCount, newCount) {
+    const inquirer = (await import("inquirer")).default;
+    const { confirm } = await inquirer.prompt([
+        {
+            type: "confirm",
+            name: "confirm",
+            message: `Account file changed: ${oldCount} → ${newCount} accounts. Continue with automation?`,
+            default: true,
+        },
+    ]);
+    return confirm;
 }
 
 function displayInfoPanel() {
@@ -147,28 +112,14 @@ async function runAllInOne() {
 async function main() {
     const inquirer = (await import("inquirer")).default;
     let running = true;
-    let lastAccountCount = 0;
 
     while (running) {
-        const accounts = readAccounts();
-        const currentAccountCount = accounts.length;
+        console.clear();
 
-        if (currentAccountCount !== lastAccountCount) {
-            console.clear();
-            lastAccountCount = currentAccountCount;
-        }
+        const initialAccounts = readAccounts();
+        const initialCount = initialAccounts.length;
 
         displayInfoPanel();
-
-        startWatchingAccountFile(() => {
-            const newAccounts = readAccounts();
-            if (newAccounts.length !== lastAccountCount) {
-                console.clear();
-                lastAccountCount = newAccounts.length;
-                displayInfoPanel();
-                console.log("\n🔄 Account file updated! Displaying refreshed data...\n");
-            }
-        });
 
         const { choice } = await inquirer.prompt([
             {
@@ -185,20 +136,42 @@ async function main() {
             },
         ]);
 
-        stopWatchingAccountFile();
-
         switch (choice) {
-            case "kiro":
+            case "kiro": {
+                const currentAccounts = readAccounts();
+                if (currentAccounts.length !== initialCount) {
+                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
+                    if (!shouldContinue) {
+                        continue;
+                    }
+                }
                 await runKiroAutomation();
                 await waitForEnter();
                 break;
-            case "cloudflare":
+            }
+            case "cloudflare": {
+                const currentAccounts = readAccounts();
+                if (currentAccounts.length !== initialCount) {
+                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
+                    if (!shouldContinue) {
+                        continue;
+                    }
+                }
                 await runCloudflareAutomation();
                 await waitForEnter();
                 break;
-            case "all":
+            }
+            case "all": {
+                const currentAccounts = readAccounts();
+                if (currentAccounts.length !== initialCount) {
+                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
+                    if (!shouldContinue) {
+                        continue;
+                    }
+                }
                 await runAllInOne();
                 break;
+            }
             case "settings":
                 await openSettings();
                 break;
@@ -208,12 +181,9 @@ async function main() {
                 break;
         }
     }
-
-    stopWatchingAccountFile();
 }
 
 main().catch((error) => {
-    stopWatchingAccountFile();
     console.error(`Fatal error: ${error.message}`);
     process.exitCode = 1;
 });
