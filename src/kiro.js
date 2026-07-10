@@ -234,7 +234,7 @@ async function runKiroWorker(
             failedCount += 1;
             processedCount += 1;
 
-            appendErrorAccount(account, error.message);
+            appendErrorAccount(account, error.message, "Kiro");
             browserArgsIndex = (browserArgsIndex + 1) % config.browserArgsSets.length;
 
             log(`[${workerId}] Error: ${error.message}`);
