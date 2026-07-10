@@ -1,0 +1,171 @@
+const fs = require("fs");
+const path = require("path");
+const { getConfig, ROOT_DIR } = require("./config");
+
+const USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+];
+
+function randomUA() {
+    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
+const sleep = (milliseconds) =>
+    new Promise((resolve) => setTimeout(resolve, milliseconds));
+
+function formatDuration(milliseconds) {
+    const totalSeconds = Math.round(milliseconds / 1000);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    const decimalMinutes = (milliseconds / 60000).toFixed(2);
+
+    return `${decimalMinutes} menit (${minutes} menit ${seconds} detik)`;
+}
+
+function ensureFileExists(filePath) {
+    if (!fs.existsSync(filePath)) {
+        fs.writeFileSync(filePath, "");
+    }
+}
+
+function readLines(filePath) {
+    ensureFileExists(filePath);
+
+    const content = fs.readFileSync(filePath, "utf-8").trim();
+
+    return content ? content.split(/\r?\n/) : [];
+}
+
+function writeLines(filePath, lines) {
+    fs.writeFileSync(filePath, lines.join("\n"));
+}
+
+function readAccounts() {
+    const config = getConfig();
+
+    return readLines(config.accountFile)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"))
+        .map((rawLine) => {
+            const parts = rawLine.split("|");
+
+            if (parts.length < 2) {return null;}
+
+            const acc = {
+                email: parts[0]?.trim(),
+                password: parts[1]?.trim(),
+                rawLine,
+            };
+
+            if (parts.length >= 3 && parts[2]?.trim()) {
+                acc.proxy = parts[2].trim();
+            }
+
+            return acc;
+        })
+        .filter((acc) => acc && acc.email && acc.password);
+}
+
+function removeAccount(rawLine) {
+    const config = getConfig();
+    const remainingLines = readLines(config.accountFile).filter(
+        (line) => line.trim() !== rawLine,
+    );
+
+    writeLines(config.accountFile, remainingLines);
+}
+
+function appendErrorAccount(account, errorMessage) {
+    const config = getConfig();
+
+    ensureFileExists(config.errorAccountFile);
+
+    fs.appendFileSync(
+        config.errorAccountFile,
+        `${account.rawLine} | ${errorMessage}\n`,
+    );
+}
+
+function chunkAccounts(accounts, count) {
+    const chunks = Array.from({ length: count }, () => []);
+
+    accounts.forEach((account, i) => chunks[i % count].push(account));
+
+    return chunks.filter((chunk) => chunk.length > 0);
+}
+
+function createFileLogger() {
+    const logDir = path.join(ROOT_DIR, "logs");
+
+    if (!fs.existsSync(logDir)) {
+        fs.mkdirSync(logDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const logFile = path.join(logDir, `${timestamp}.log`);
+    const stream = fs.createWriteStream(logFile, { flags: "a" });
+
+    function log(message) {
+        const ts = new Date().toISOString();
+        stream.write(`[${ts}] ${message}\n`);
+    }
+
+    function close() {
+        stream.end();
+    }
+
+    return { log, close, logFile };
+}
+
+const activeAccounts = new Set();
+
+async function acquireAccountLock(email, log, progressUpdate) {
+    if (activeAccounts.has(email)) {
+        log(
+            `[Lock] ${email} is currently being processed by another worker. Waiting...`,
+        );
+
+        if (progressUpdate) {
+            progressUpdate({ step: "⏳ Antri login..." });
+        }
+
+        while (activeAccounts.has(email)) {
+            await sleep(2000);
+        }
+    }
+
+    activeAccounts.add(email);
+}
+
+function tryAcquireAccountLock(email) {
+    if (activeAccounts.has(email)) {return false;}
+
+    activeAccounts.add(email);
+
+    return true;
+}
+
+function releaseAccountLock(email) {
+    activeAccounts.delete(email);
+}
+
+module.exports = {
+    randomUA,
+    sleep,
+    formatDuration,
+    ensureFileExists,
+    readLines,
+    writeLines,
+    readAccounts,
+    removeAccount,
+    appendErrorAccount,
+    chunkAccounts,
+    createFileLogger,
+    acquireAccountLock,
+    tryAcquireAccountLock,
+    releaseAccountLock,
+};
