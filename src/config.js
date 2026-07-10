@@ -1,0 +1,214 @@
+const fs = require("fs");
+const path = require("path");
+
+const ROOT_DIR = path.resolve(__dirname, "..");
+const ENV_PATH = path.join(ROOT_DIR, ".env");
+
+const DEFAULT_CHROME_PATH =
+  "/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome";
+const DEFAULT_ROUTER_URL = "http://100.112.135.61:5000/";
+const DEFAULT_ACCOUNT_FILE_NAME = "accounts.txt";
+const DEFAULT_RESULT_FILE_NAME = "cf_keys.txt";
+const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "errorAccounts.txt";
+
+const DEFAULT_BROWSER_ARGS_SETS = [
+    [
+        "--incognito",
+        "--disable-extensions",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=BlockThirdPartyCookies",
+        "--disable-site-isolation-trials",
+        "--disable-web-security",
+    ],
+    [
+        "--incognito",
+        "--disable-extensions",
+        "--disable-blink-features=AutomationControlled",
+        "--disable-features=BlockThirdPartyCookies",
+        "--disable-site-isolation-trials",
+        "--disable-web-security",
+    ],
+];
+
+const SHARED_SELECTORS = {
+    googleSignIn: "::-p-text(Google)",
+    iUnderstand: "::-p-text(I understand)",
+    loginOptions: [
+        "::-p-text(Allow)",
+        "::-p-text(Continue)",
+        "::-p-text(Accept)",
+        "::-p-text(Lanjutkan)",
+    ],
+};
+
+function loadEnvFile(filePath) {
+    if (!fs.existsSync(filePath)) {
+        return {};
+    }
+
+    const env = {};
+    const lines = fs.readFileSync(filePath, "utf-8").split(/\r?\n/);
+
+    for (const line of lines) {
+        const trimmedLine = line.trim();
+
+        if (!trimmedLine || trimmedLine.startsWith("#")) {
+            continue;
+        }
+
+        const separatorIndex = trimmedLine.indexOf("=");
+
+        if (separatorIndex === -1) {
+            continue;
+        }
+
+        const key = trimmedLine.slice(0, separatorIndex).trim();
+        let value = trimmedLine.slice(separatorIndex + 1).trim();
+
+        if (
+            (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+        ) {
+            value = value.slice(1, -1);
+        }
+
+        env[key] = value;
+    }
+
+    return env;
+}
+
+function toPositiveNumber(value, fallback) {
+    const parsed = Number(value);
+
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function parseBrowserArgsSets(value) {
+    if (!value) {
+        return DEFAULT_BROWSER_ARGS_SETS;
+    }
+
+    try {
+        const parsed = JSON.parse(value);
+
+        if (!Array.isArray(parsed) || parsed.length === 0) {
+            throw new Error("BROWSER_ARGS_SETS must be non-empty array");
+        }
+
+        return parsed.map((entry) => {
+            if (
+                !Array.isArray(entry) ||
+        entry.some((arg) => typeof arg !== "string")
+            ) {
+                throw new Error("Each browser arg set must be array of strings");
+            }
+
+            return entry;
+        });
+    } catch (error) {
+        throw new Error(`Invalid BROWSER_ARGS_SETS: ${error.message}`);
+    }
+}
+
+function createConfig() {
+    const env = { ...loadEnvFile(ENV_PATH), ...process.env };
+
+    return {
+        headless: (env.PW_HEADLESS || "1") !== "0",
+        browserCount: Math.max(1, toPositiveNumber(env.BROWSER_COUNT, 1)),
+        slowMo: toPositiveNumber(env.BROWSER_SLOW_MO, 2),
+        routerUrl: env.ROUTER_URL || DEFAULT_ROUTER_URL,
+        chromeExecutablePath: env.CHROME_EXECUTABLE_PATH || DEFAULT_CHROME_PATH,
+        accountFile: path.resolve(
+            ROOT_DIR,
+            env.ACCOUNT_FILE || DEFAULT_ACCOUNT_FILE_NAME,
+        ),
+        resultFile: path.resolve(
+            ROOT_DIR,
+            env.RESULT_FILE || DEFAULT_RESULT_FILE_NAME,
+        ),
+        errorAccountFile: path.resolve(
+            ROOT_DIR,
+            env.ERROR_ACCOUNT_FILE || DEFAULT_ERROR_ACCOUNT_FILE_NAME,
+        ),
+        browserArgsSets: parseBrowserArgsSets(env.BROWSER_ARGS_SETS),
+        delays: {
+            beforeNextClick: toPositiveNumber(env.DELAY_BEFORE_NEXT_CLICK_MS, 1000),
+            betweenAccounts: toPositiveNumber(env.DELAY_BETWEEN_ACCOUNTS_MS, 3000),
+            beforeBrowserClose: toPositiveNumber(
+                env.DELAY_BEFORE_BROWSER_CLOSE_MS,
+                3000,
+            ),
+            beforeReadingCookies: toPositiveNumber(
+                env.DELAY_BEFORE_READING_COOKIES_MS,
+                5000,
+            ),
+        },
+        timeouts: {
+            navigation: toPositiveNumber(env.TIMEOUT_NAVIGATION_MS, 60000),
+            default: toPositiveNumber(env.TIMEOUT_DEFAULT_MS, 15000),
+            short: toPositiveNumber(env.TIMEOUT_SHORT_MS, 10000),
+        },
+    };
+}
+
+function updateEnvValue(key, value) {
+    let content = "";
+
+    if (fs.existsSync(ENV_PATH)) {
+        content = fs.readFileSync(ENV_PATH, "utf-8");
+    }
+
+    const lines = content.split(/\r?\n/);
+    let found = false;
+
+    const updatedLines = lines.map((line) => {
+        const trimmed = line.trim();
+
+        if (trimmed.startsWith("#") || !trimmed) {return line;}
+
+        const sepIdx = trimmed.indexOf("=");
+
+        if (sepIdx === -1) {return line;}
+
+        const lineKey = trimmed.slice(0, sepIdx).trim();
+
+        if (lineKey === key) {
+            found = true;
+
+            return `${key}=${value}`;
+        }
+
+        return line;
+    });
+
+    if (!found) {
+        updatedLines.push(`${key}=${value}`);
+    }
+
+    fs.writeFileSync(ENV_PATH, updatedLines.join("\n"));
+}
+
+let CONFIG = createConfig();
+
+function reloadConfig() {
+    CONFIG = createConfig();
+
+    return CONFIG;
+}
+
+function getConfig() {
+    return CONFIG;
+}
+
+module.exports = {
+    ROOT_DIR,
+    ENV_PATH,
+    getConfig,
+    reloadConfig,
+    createConfig,
+    updateEnvValue,
+    loadEnvFile,
+    SHARED_SELECTORS,
+};
