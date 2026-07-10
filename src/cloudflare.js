@@ -446,7 +446,7 @@ async function runCFWorker(
             failedCount += 1;
             processedCount += 1;
 
-            appendErrorAccount(account, error.message);
+            appendErrorAccount(account, error.message, "Cloudflare");
             browserArgsIndex = (browserArgsIndex + 1) % config.browserArgsSets.length;
 
             log(`[${workerId}] Error: ${error.message}`);
