@@ -5,6 +5,17 @@ const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { openSettings } = require("./src/settings");
 
+async function waitForEnter() {
+    const inquirer = (await import("inquirer")).default;
+    await inquirer.prompt([
+        {
+            type: "input",
+            name: "continue",
+            message: "Tekan Enter untuk kembali ke menu...",
+        },
+    ]);
+}
+
 function displayInfoPanel() {
     const config = getConfig();
     const accounts = readAccounts();
@@ -81,6 +92,8 @@ async function runAllInOne() {
         `✅ All-in-One Selesai! ${kiroStr} │ ${cfStr} │ Durasi: ${duration}`,
     );
     console.log("");
+
+    await waitForEnter();
 }
 
 async function main() {
