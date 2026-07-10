@@ -23,7 +23,7 @@ function formatDuration(milliseconds) {
     const seconds = totalSeconds % 60;
     const decimalMinutes = (milliseconds / 60000).toFixed(2);
 
-    return `${decimalMinutes} menit (${minutes} menit ${seconds} detik)`;
+    return `${decimalMinutes} min (${minutes}m ${seconds}s)`;
 }
 
 function ensureFileExists(filePath) {
@@ -57,7 +57,7 @@ function readAccounts() {
             const parts = rawLine.split("|");
 
             if (parts.length < 2) {
-                invalidLines.push({ line: rawLine, reason: "Format salah - harus: email|password atau email|password|proxy" });
+                invalidLines.push({ line: rawLine, reason: "Wrong format - should be: email|password or email|password|proxy" });
                 return;
             }
 
@@ -65,7 +65,7 @@ function readAccounts() {
             const password = parts[1]?.trim();
 
             if (!email || !password) {
-                invalidLines.push({ line: rawLine, reason: "Email atau password kosong" });
+                invalidLines.push({ line: rawLine, reason: "Email or password is empty" });
                 return;
             }
 
@@ -84,23 +84,23 @@ function readAccounts() {
 
     if (invalidLines.length > 0 && validAccounts.length === 0) {
         console.error("");
-        console.error("❌ ERROR: Semua akun di accounts.txt format salah!");
+        console.error("❌ ERROR: All accounts in accounts.txt have wrong format!");
         console.error("");
-        console.error("Format yang benar:");
+        console.error("Correct format:");
         console.error("  email|password");
         console.error("  email|password|proxy");
         console.error("");
-        console.error("Contoh:");
+        console.error("Examples:");
         console.error("  user@gmail.com|MyPassword123");
         console.error("  user@gmail.com|MyPassword123|http://proxy:8080");
         console.error("");
-        console.error("Baris yang salah:");
+        console.error("Invalid lines:");
         invalidLines.slice(0, 5).forEach((item) => {
             console.error(`  - ${item.line}`);
             console.error(`    ${item.reason}`);
         });
         if (invalidLines.length > 5) {
-            console.error(`  ... dan ${invalidLines.length - 5} baris lainnya`);
+            console.error(`  ... and ${invalidLines.length - 5} more lines`);
         }
         console.error("");
     }

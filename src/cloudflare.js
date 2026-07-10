@@ -550,7 +550,7 @@ async function runCloudflareAutomation(sharedProgress = null) {
     const totalDuration = Date.now() - startedAt;
 
     if (!sharedProgress) {
-        printReport("☁️  LAPORAN CLOUDFLARE AUTOMATION", results, totalDuration);
+        printReport("☁️  CLOUDFLARE AUTOMATION REPORT", results, totalDuration);
         console.log(`📄 Log: ${logger.logFile}`);
         console.log("");
     } else {

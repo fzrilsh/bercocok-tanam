@@ -18,7 +18,7 @@ async function openSettings() {
         );
         console.log(`  3. Chrome Executable: ${config.chromeExecutablePath}`);
         console.log(
-            `  4. Account File     : ${config.accountFile} (${accounts.length} akun)`,
+            `  4. Account File     : ${config.accountFile} (${accounts.length} accounts)`,
         );
         console.log(`  5. Browser Count    : ${config.browserCount}`);
         console.log("  6. ← Back");
@@ -28,7 +28,7 @@ async function openSettings() {
             {
                 type: "list",
                 name: "choice",
-                message: "Pilih setting yang ingin diubah:",
+                message: "Choose setting to modify:",
                 choices: [
                     { name: "1. Router URL", value: "router_url" },
                     { name: "2. PW Headless", value: "pw_headless" },
@@ -51,14 +51,14 @@ async function openSettings() {
                     {
                         type: "input",
                         name: "value",
-                        message: "Masukkan Router URL baru:",
+                        message: "Enter new Router URL:",
                         default: config.routerUrl,
                         validate: (input) => {
                             try {
                                 new URL(input);
                                 return true;
                             } catch {
-                                return "URL tidak valid. Contoh: http://100.112.135.61:5000/";
+                                return "Invalid URL. Example: http://100.112.135.61:5000/";
                             }
                         },
                     },
@@ -66,7 +66,7 @@ async function openSettings() {
 
                 updateEnvValue("ROUTER_URL", value);
                 reloadConfig();
-                console.log("✅ Router URL diperbarui!");
+                console.log("✅ Router URL updated!");
                 break;
             }
 
@@ -86,7 +86,7 @@ async function openSettings() {
 
                 updateEnvValue("PW_HEADLESS", value);
                 reloadConfig();
-                console.log("✅ PW Headless diperbarui!");
+                console.log("✅ PW Headless updated!");
                 break;
             }
 
@@ -95,14 +95,14 @@ async function openSettings() {
                     {
                         type: "input",
                         name: "value",
-                        message: "Masukkan path Chrome executable:",
+                        message: "Enter Chrome executable path:",
                         default: config.chromeExecutablePath,
                     },
                 ]);
 
                 updateEnvValue("CHROME_EXECUTABLE_PATH", value);
                 reloadConfig();
-                console.log("✅ Chrome path diperbarui!");
+                console.log("✅ Chrome path updated!");
                 break;
             }
 
@@ -111,14 +111,14 @@ async function openSettings() {
                     {
                         type: "input",
                         name: "value",
-                        message: "Masukkan nama file account:",
+                        message: "Enter account file name:",
                         default: "accounts.txt",
                     },
                 ]);
 
                 updateEnvValue("ACCOUNT_FILE", value);
                 reloadConfig();
-                console.log("✅ Account file diperbarui!");
+                console.log("✅ Account file updated!");
                 break;
             }
 
@@ -127,12 +127,12 @@ async function openSettings() {
                     {
                         type: "number",
                         name: "value",
-                        message: "Masukkan jumlah browser:",
+                        message: "Enter browser count:",
                         default: config.browserCount,
                         validate: (input) => {
                             const num = Number(input);
                             if (!Number.isFinite(num) || num < 1) {
-                                return "Harus angka >= 1";
+                                return "Must be a number >= 1";
                             }
                             return true;
                         },
@@ -141,7 +141,7 @@ async function openSettings() {
 
                 updateEnvValue("BROWSER_COUNT", String(value));
                 reloadConfig();
-                console.log("✅ Browser count diperbarui!");
+                console.log("✅ Browser count updated!");
                 break;
             }
         }

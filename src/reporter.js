@@ -28,22 +28,22 @@ function printReport(title, workerStats, totalDuration) {
         totalProcessingTime += stats.accounts.reduce((sum, a) => sum + a.duration, 0);
     });
 
-    console.log(colors.cyan.bold("📊 RINGKASAN KESELURUHAN"));
+    console.log(colors.cyan.bold("📊 OVERALL SUMMARY"));
     console.log(colors.gray("─".repeat(80)));
-    console.log(`  Total Akun Diproses  : ${colors.white.bold(totalProcessed)}`);
-    console.log(`  ${colors.green("✅ Berhasil")}          : ${colors.green.bold(totalSuccess)} akun`);
-    console.log(`  ${colors.red("❌ Gagal")}             : ${colors.red.bold(totalFailed)} akun`);
+    console.log(`  Total Accounts       : ${colors.white.bold(totalProcessed)}`);
+    console.log(`  ${colors.green("✅ Success")}          : ${colors.green.bold(totalSuccess)} accounts`);
+    console.log(`  ${colors.red("❌ Failed")}           : ${colors.red.bold(totalFailed)} accounts`);
     console.log(`  Success Rate         : ${colors.yellow.bold(`${totalProcessed > 0 ? ((totalSuccess / totalProcessed) * 100).toFixed(1) : 0}%`)}`);
-    console.log(`  Total Durasi         : ${colors.white(formatDuration(totalDuration))}`);
+    console.log(`  Total Duration       : ${colors.white(formatDuration(totalDuration))}`);
 
     if (totalProcessed > 0) {
         const avgTime = totalProcessingTime / totalProcessed;
-        console.log(`  Rata-rata per Akun   : ${colors.white(formatTime(avgTime))}`);
+        console.log(`  Average per Account  : ${colors.white(formatTime(avgTime))}`);
     }
 
     console.log("");
 
-    console.log(colors.cyan.bold("👷 DETAIL PER WORKER"));
+    console.log(colors.cyan.bold("👷 WORKER DETAILS"));
     console.log(colors.gray("─".repeat(80)));
 
     workerStats.forEach((stats) => {
@@ -55,11 +55,11 @@ function printReport(title, workerStats, totalDuration) {
 
         console.log("");
         console.log(`  ${colors.yellow.bold(stats.label)}`);
-        console.log(`    Processed: ${stats.accounts.length} akun | ✅ ${successCount} | ❌ ${failedCount}`);
-        console.log(`    Rata-rata: ${formatTime(avgWorkerTime)}/akun`);
+        console.log(`    Processed: ${stats.accounts.length} accounts | ✅ ${successCount} | ❌ ${failedCount}`);
+        console.log(`    Average: ${formatTime(avgWorkerTime)}/account`);
 
         if (stats.accounts.length > 0) {
-            console.log(`    Akun:`);
+            console.log(`    Accounts:`);
             stats.accounts.forEach((acc) => {
                 const statusIcon = acc.success ? colors.green("✅") : colors.red("❌");
                 const timeStr = colors.gray(formatTime(acc.duration));
@@ -73,7 +73,7 @@ function printReport(title, workerStats, totalDuration) {
 
     if (allFailed.length > 0) {
         console.log("");
-        console.log(colors.red.bold("❌ DAFTAR AKUN GAGAL"));
+        console.log(colors.red.bold("❌ FAILED ACCOUNTS"));
         console.log(colors.gray("─".repeat(80)));
 
         allFailed.forEach((acc) => {
@@ -84,7 +84,7 @@ function printReport(title, workerStats, totalDuration) {
         });
 
         console.log("");
-        console.log(colors.yellow(`  💡 Cek file errorAccounts.txt untuk detail lengkap`));
+        console.log(colors.yellow(`  💡 Check errorAccounts.txt for complete details`));
     }
 
     console.log("");

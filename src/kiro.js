@@ -333,7 +333,7 @@ async function runKiroAutomation(sharedProgress = null) {
     const totalDuration = Date.now() - startedAt;
 
     if (!sharedProgress) {
-        printReport("🌱 LAPORAN KIRO AUTOMATION", results, totalDuration);
+        printReport("🌱 KIRO AUTOMATION REPORT", results, totalDuration);
         console.log(`📄 Log: ${logger.logFile}`);
         console.log("");
     } else {

@@ -11,7 +11,7 @@ async function waitForEnter() {
         {
             type: "input",
             name: "continue",
-            message: "Tekan Enter untuk kembali ke menu...",
+            message: "Press Enter to return to menu...",
         },
     ]);
 }
@@ -26,7 +26,7 @@ function displayInfoPanel() {
         ["Chrome Path", config.chromeExecutablePath],
         [
             "Account File",
-            `${path.basename(config.accountFile)} (${accounts.length} akun)`,
+            `${path.basename(config.accountFile)} (${accounts.length} accounts)`,
         ],
         ["Browser Count", String(config.browserCount)],
     ];
@@ -89,7 +89,7 @@ async function runAllInOne() {
         : "CF: no accounts";
 
     console.log(
-        `✅ All-in-One Selesai! ${kiroStr} │ ${cfStr} │ Durasi: ${duration}`,
+        `✅ All-in-One Complete! ${kiroStr} │ ${cfStr} │ Duration: ${duration}`,
     );
     console.log("");
 
@@ -107,7 +107,7 @@ async function main() {
             {
                 type: "list",
                 name: "choice",
-                message: "Pilih menu:",
+                message: "Choose menu:",
                 choices: [
                     { name: "1. 🔑 Kiro Automation", value: "kiro" },
                     { name: "2. ☁️  Cloudflare Automation", value: "cloudflare" },
