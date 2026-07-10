@@ -19,6 +19,7 @@ const {
     clickFirstVisibleSelector,
 } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
+const { printReport } = require("./reporter");
 const fs = require("fs");
 
 const TARGET_URL = "https://dash.cloudflare.com/login";
@@ -378,6 +379,7 @@ async function runCFWorker(
     let failedCount = 0;
     let processedCount = 0;
 
+    const accountStats = [];
     const queue = [...workerAccounts];
 
     while (queue.length > 0) {
@@ -407,6 +409,10 @@ async function runCFWorker(
             });
         };
 
+        const startTime = Date.now();
+        let accountSuccess = false;
+        let accountError = null;
+
         try {
             if (!hasLock) {
                 await acquireAccountLock(account.email, log, updateProgress);
@@ -423,6 +429,7 @@ async function runCFWorker(
                 updateProgress,
             );
 
+            accountSuccess = true;
             successCount += 1;
             processedCount += 1;
 
@@ -434,6 +441,8 @@ async function runCFWorker(
                 current: processedCount,
             });
         } catch (error) {
+            accountSuccess = false;
+            accountError = error.message;
             failedCount += 1;
             processedCount += 1;
 
@@ -450,6 +459,15 @@ async function runCFWorker(
                 current: processedCount,
             });
         } finally {
+            const duration = Date.now() - startTime;
+
+            accountStats.push({
+                email: account.email,
+                success: accountSuccess,
+                duration,
+                error: accountError,
+            });
+
             if (hasLock) {
                 releaseAccountLock(account.email);
             }
@@ -469,7 +487,12 @@ async function runCFWorker(
         current: workerAccounts.length,
     });
 
-    return { successCount, failedCount };
+    return {
+        successCount,
+        failedCount,
+        accounts: accountStats,
+        label: `CF W${workerIndex + 1}`,
+    };
 }
 
 async function runCloudflareAutomation(sharedProgress = null) {
@@ -524,15 +547,14 @@ async function runCloudflareAutomation(sharedProgress = null) {
 
     const successCount = results.reduce((sum, r) => sum + r.successCount, 0);
     const failedCount = results.reduce((sum, r) => sum + r.failedCount, 0);
-    const duration = formatDuration(Date.now() - startedAt);
+    const totalDuration = Date.now() - startedAt;
 
     if (!sharedProgress) {
-        console.log(
-            `✅ Selesai! Cloudflare: ${successCount} success, ${failedCount} failed │ Durasi: ${duration}`,
-        );
+        printReport("☁️  LAPORAN CLOUDFLARE AUTOMATION", results, totalDuration);
         console.log(`📄 Log: ${logger.logFile}`);
         console.log("");
     } else {
+        const duration = formatDuration(totalDuration);
         logger.log(
             `Cloudflare finished. Success: ${successCount}, Failed: ${failedCount}, Duration: ${duration}`,
         );
