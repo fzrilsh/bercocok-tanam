@@ -79,14 +79,16 @@ function removeAccount(rawLine) {
     writeLines(config.accountFile, remainingLines);
 }
 
-function appendErrorAccount(account, errorMessage) {
+function appendErrorAccount(account, errorMessage, automationType = "Unknown") {
     const config = getConfig();
 
     ensureFileExists(config.errorAccountFile);
 
+    const timestamp = new Date().toISOString();
+
     fs.appendFileSync(
         config.errorAccountFile,
-        `${account.rawLine} | ${errorMessage}\n`,
+        `${account.rawLine} | ${automationType} | ${timestamp} | ${errorMessage}\n`,
     );
 }
 
