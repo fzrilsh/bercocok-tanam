@@ -121,9 +121,11 @@ async function main() {
         switch (choice) {
             case "kiro":
                 await runKiroAutomation();
+                await waitForEnter();
                 break;
             case "cloudflare":
                 await runCloudflareAutomation();
+                await waitForEnter();
                 break;
             case "all":
                 await runAllInOne();
