@@ -6,7 +6,7 @@ const ENV_PATH = path.join(ROOT_DIR, ".env");
 
 const DEFAULT_CHROME_PATH =
   "/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome";
-const DEFAULT_ROUTER_URL = "http://100.112.135.61:5000/";
+const DEFAULT_ROUTER_URL = "http://127.0.0.1:20128/";
 const DEFAULT_ACCOUNT_FILE_NAME = "accounts.txt";
 const DEFAULT_RESULT_FILE_NAME = "cf_keys.txt";
 const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "errorAccounts.txt";

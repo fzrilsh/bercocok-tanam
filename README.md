@@ -32,7 +32,7 @@ Automated CLI tool for harvesting Kiro refresh tokens and Cloudflare Workers AI 
 - **9Router** - Backend service for token management
   - This tool harvests tokens and imports them to 9Router
   - Must be running and accessible at configured `ROUTER_URL`
-  - Default: `http://100.112.135.61:5000/`
+  - Default: `http://127.0.0.1:20128/`
 
 ## 🚀 Installation
 
@@ -57,8 +57,8 @@ cp .env.example .env
 Create a `.env` file in the project root:
 
 ```env
-# Router URL for token import (default: http://100.112.135.61:5000/)
-ROUTER_URL=http://your-router-url:5000/
+# Router URL for token import (default: http://127.0.0.1:20128/)
+ROUTER_URL=http://your-router-url:20128/
 
 # Browser settings
 PW_HEADLESS=0                 # 0 = visible browser, 1 = headless mode
@@ -256,7 +256,7 @@ bercocok-tanam/
 ### 9Router connection errors
 - Verify 9Router is running and accessible
 - Check `ROUTER_URL` in `.env` or settings
-- Test connection: `curl http://your-router-url:5000/`
+- Test connection: `curl http://127.0.0.1:20128/`
 - Ensure firewall allows connections to router port
 - Check router logs for import errors
 
