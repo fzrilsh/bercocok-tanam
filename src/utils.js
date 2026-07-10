@@ -88,8 +88,14 @@ const USER_AGENTS = [
     "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 OPR/116.0.0.0",
 ];
 
+let uaPool = [];
+
 function randomUA() {
-    return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+  if (uaPool.length === 0) {
+    uaPool = [...USER_AGENTS].sort(() => Math.random() - 0.5);
+  }
+
+  return uaPool.pop();
 }
 
 const sleep = (milliseconds) =>
