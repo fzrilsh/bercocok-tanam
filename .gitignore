@@ -5,3 +5,4 @@ accounts.txt
 cf_keys.txt
 errorAccounts.txt
 package-lock.json
+.claude
