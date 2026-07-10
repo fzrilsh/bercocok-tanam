@@ -46,18 +46,32 @@ function writeLines(filePath, lines) {
 
 function readAccounts() {
     const config = getConfig();
+    const allLines = readLines(config.accountFile);
+    const validAccounts = [];
+    const invalidLines = [];
 
-    return readLines(config.accountFile)
+    allLines
         .map((line) => line.trim())
         .filter((line) => line && !line.startsWith("#"))
-        .map((rawLine) => {
+        .forEach((rawLine) => {
             const parts = rawLine.split("|");
 
-            if (parts.length < 2) {return null;}
+            if (parts.length < 2) {
+                invalidLines.push({ line: rawLine, reason: "Format salah - harus: email|password atau email|password|proxy" });
+                return;
+            }
+
+            const email = parts[0]?.trim();
+            const password = parts[1]?.trim();
+
+            if (!email || !password) {
+                invalidLines.push({ line: rawLine, reason: "Email atau password kosong" });
+                return;
+            }
 
             const acc = {
-                email: parts[0]?.trim(),
-                password: parts[1]?.trim(),
+                email,
+                password,
                 rawLine,
             };
 
@@ -65,9 +79,33 @@ function readAccounts() {
                 acc.proxy = parts[2].trim();
             }
 
-            return acc;
-        })
-        .filter((acc) => acc && acc.email && acc.password);
+            validAccounts.push(acc);
+        });
+
+    if (invalidLines.length > 0 && validAccounts.length === 0) {
+        console.error("");
+        console.error("❌ ERROR: Semua akun di accounts.txt format salah!");
+        console.error("");
+        console.error("Format yang benar:");
+        console.error("  email|password");
+        console.error("  email|password|proxy");
+        console.error("");
+        console.error("Contoh:");
+        console.error("  user@gmail.com|MyPassword123");
+        console.error("  user@gmail.com|MyPassword123|http://proxy:8080");
+        console.error("");
+        console.error("Baris yang salah:");
+        invalidLines.slice(0, 5).forEach((item) => {
+            console.error(`  - ${item.line}`);
+            console.error(`    ${item.reason}`);
+        });
+        if (invalidLines.length > 5) {
+            console.error(`  ... dan ${invalidLines.length - 5} baris lainnya`);
+        }
+        console.error("");
+    }
+
+    return validAccounts;
 }
 
 function removeAccount(rawLine) {
