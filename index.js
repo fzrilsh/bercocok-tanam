@@ -16,6 +16,74 @@ async function waitForEnter() {
     ]);
 }
 
+async function retryFailedAccounts(failedAccountsList, automationType) {
+    const inquirer = (await import("inquirer")).default;
+
+    while (failedAccountsList.length > 0) {
+        const { retry } = await inquirer.prompt([
+            {
+                type: "confirm",
+                name: "retry",
+                message: `${failedAccountsList.length} accounts failed. Retry failed accounts?`,
+                default: true,
+            },
+        ]);
+
+        if (!retry) {
+            console.log(`Skipped retry for ${failedAccountsList.length} failed accounts.\n`);
+            break;
+        }
+
+        console.log(`\nRetrying ${failedAccountsList.length} failed accounts...\n`);
+
+        const tempAccountFile = require("path").join(
+            require("os").tmpdir(),
+            `retry-${Date.now()}.txt`
+        );
+
+        const fs = require("fs");
+        fs.writeFileSync(
+            tempAccountFile,
+            failedAccountsList.map((a) => a.rawLine).join("\n")
+        );
+
+        const originalConfig = getConfig();
+        const { updateEnvValue, reloadConfig } = require("./src/config");
+        updateEnvValue("ACCOUNT_FILE", tempAccountFile);
+        reloadConfig();
+
+        let result;
+        if (automationType === "kiro") {
+            result = await runKiroAutomation();
+        } else if (automationType === "cloudflare") {
+            result = await runCloudflareAutomation();
+        }
+
+        updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
+        reloadConfig();
+
+        try {
+            fs.unlinkSync(tempAccountFile);
+        } catch (e) {
+            // Ignore cleanup errors
+        }
+
+        if (!result || result.failedCount === 0) {
+            console.log("✅ All accounts processed successfully!\n");
+            break;
+        }
+
+        failedAccountsList = failedAccountsList.filter((acc) =>
+            fs.readFileSync(originalConfig.errorAccountFile, "utf-8").includes(acc.email)
+        );
+
+        if (failedAccountsList.length === 0) {
+            console.log("✅ All retries succeeded!\n");
+            break;
+        }
+    }
+}
+
 async function confirmAccountChanges(oldCount, newCount) {
     const inquirer = (await import("inquirer")).default;
     const { confirm } = await inquirer.prompt([
@@ -27,6 +95,24 @@ async function confirmAccountChanges(oldCount, newCount) {
         },
     ]);
     return confirm;
+}
+
+function getFailedAccounts(results) {
+    const failed = [];
+    if (results && Array.isArray(results)) {
+        results.forEach((worker) => {
+            if (worker.accounts) {
+                worker.accounts.filter(a => !a.success).forEach(acc => {
+                    failed.push({
+                        email: acc.email,
+                        rawLine: acc.rawLine,
+                        error: acc.error,
+                    });
+                });
+            }
+        });
+    }
+    return failed;
 }
 
 function displayInfoPanel() {
@@ -106,6 +192,20 @@ async function runAllInOne() {
     );
     console.log("");
 
+    if (kiroResult && kiroResult.failedCount > 0) {
+        const failedKiro = getFailedAccounts(kiroResult.results);
+        if (failedKiro.length > 0) {
+            await retryFailedAccounts(failedKiro, "kiro");
+        }
+    }
+
+    if (cfResult && cfResult.failedCount > 0) {
+        const failedCF = getFailedAccounts(cfResult.results);
+        if (failedCF.length > 0) {
+            await retryFailedAccounts(failedCF, "cloudflare");
+        }
+    }
+
     await waitForEnter();
 }
 
@@ -145,7 +245,13 @@ async function main() {
                         continue;
                     }
                 }
-                await runKiroAutomation();
+                const kiroResult = await runKiroAutomation();
+                if (kiroResult && kiroResult.failedCount > 0) {
+                    const failedAccounts = getFailedAccounts(kiroResult.results);
+                    if (failedAccounts.length > 0) {
+                        await retryFailedAccounts(failedAccounts, "kiro");
+                    }
+                }
                 await waitForEnter();
                 break;
             }
@@ -157,7 +263,13 @@ async function main() {
                         continue;
                     }
                 }
-                await runCloudflareAutomation();
+                const cfResult = await runCloudflareAutomation();
+                if (cfResult && cfResult.failedCount > 0) {
+                    const failedAccounts = getFailedAccounts(cfResult.results);
+                    if (failedAccounts.length > 0) {
+                        await retryFailedAccounts(failedAccounts, "cloudflare");
+                    }
+                }
                 await waitForEnter();
                 break;
             }

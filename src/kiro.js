@@ -251,6 +251,7 @@ async function runKiroWorker(
 
             accountStats.push({
                 email: account.email,
+                rawLine: account.rawLine,
                 success: accountSuccess,
                 duration,
                 error: accountError,
@@ -345,7 +346,7 @@ async function runKiroAutomation(sharedProgress = null) {
 
     logger.close();
 
-    return { successCount, failedCount };
+    return { successCount, failedCount, results };
 }
 
 module.exports = {
