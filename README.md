@@ -29,6 +29,10 @@ Automated CLI tool for harvesting Kiro refresh tokens and Cloudflare Workers AI 
 - Node.js 16+ 
 - Google Chrome or Chromium browser
 - Valid Google accounts (email|password format)
+- **9Router** - Backend service for token management
+  - This tool harvests tokens and imports them to 9Router
+  - Must be running and accessible at configured `ROUTER_URL`
+  - Default: `http://100.112.135.61:5000/`
 
 ## 🚀 Installation
 
@@ -229,6 +233,7 @@ bercocok-tanam/
 - **Inquirer** - Interactive CLI prompts
 - **CLI-Progress** - Progress bars
 - **ANSI-Colors** - Terminal colors
+- **9Router** - Token management backend service
 
 ## 🔧 Troubleshooting
 
@@ -247,6 +252,13 @@ bercocok-tanam/
 - Verify Chrome path in settings or `.env`
 - Check Chrome is installed and executable
 - Try default Chrome path (remove custom setting)
+
+### 9Router connection errors
+- Verify 9Router is running and accessible
+- Check `ROUTER_URL` in `.env` or settings
+- Test connection: `curl http://your-router-url:5000/`
+- Ensure firewall allows connections to router port
+- Check router logs for import errors
 
 ### Proxy errors (Cloudflare only)
 - Verify proxy format: `http://host:port` or `http://user:pass@host:port`
