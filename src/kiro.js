@@ -18,6 +18,7 @@ const {
     clickFirstVisibleSelector,
 } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
+const { printReport } = require("./reporter");
 
 const TARGET_URL = "https://app.kiro.dev/signin/";
 
@@ -166,6 +167,7 @@ async function runKiroWorker(
     let failedCount = 0;
     let processedCount = 0;
 
+    const accountStats = [];
     const queue = [...workerAccounts];
 
     while (queue.length > 0) {
@@ -195,6 +197,10 @@ async function runKiroWorker(
             });
         };
 
+        const startTime = Date.now();
+        let accountSuccess = false;
+        let accountError = null;
+
         try {
             if (!hasLock) {
                 await acquireAccountLock(account.email, log, updateProgress);
@@ -211,6 +217,7 @@ async function runKiroWorker(
                 updateProgress,
             );
 
+            accountSuccess = true;
             successCount += 1;
             processedCount += 1;
 
@@ -222,6 +229,8 @@ async function runKiroWorker(
                 current: processedCount,
             });
         } catch (error) {
+            accountSuccess = false;
+            accountError = error.message;
             failedCount += 1;
             processedCount += 1;
 
@@ -238,6 +247,15 @@ async function runKiroWorker(
                 current: processedCount,
             });
         } finally {
+            const duration = Date.now() - startTime;
+
+            accountStats.push({
+                email: account.email,
+                success: accountSuccess,
+                duration,
+                error: accountError,
+            });
+
             if (hasLock) {
                 releaseAccountLock(account.email);
             }
@@ -257,7 +275,12 @@ async function runKiroWorker(
         current: workerAccounts.length,
     });
 
-    return { successCount, failedCount };
+    return {
+        successCount,
+        failedCount,
+        accounts: accountStats,
+        label: `Kiro W${workerIndex + 1}`,
+    };
 }
 
 async function runKiroAutomation(sharedProgress = null) {
@@ -307,15 +330,14 @@ async function runKiroAutomation(sharedProgress = null) {
 
     const successCount = results.reduce((sum, r) => sum + r.successCount, 0);
     const failedCount = results.reduce((sum, r) => sum + r.failedCount, 0);
-    const duration = formatDuration(Date.now() - startedAt);
+    const totalDuration = Date.now() - startedAt;
 
     if (!sharedProgress) {
-        console.log(
-            `✅ Selesai! Kiro: ${successCount} success, ${failedCount} failed │ Durasi: ${duration}`,
-        );
+        printReport("🌱 LAPORAN KIRO AUTOMATION", results, totalDuration);
         console.log(`📄 Log: ${logger.logFile}`);
         console.log("");
     } else {
+        const duration = formatDuration(totalDuration);
         logger.log(
             `Kiro finished. Success: ${successCount}, Failed: ${failedCount}, Duration: ${duration}`,
         );
