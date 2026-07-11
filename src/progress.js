@@ -30,14 +30,13 @@ function createProgressManager(title) {
     const multiBar = new cliProgress.MultiBar(
         {
             format: (options, params, payload) => {
+                const filled = Math.min(
+                    options.barsize,
+                    Math.ceil(params.progress * options.barsize),
+                );
                 const bar =
-          options.barCompleteString.slice(
-              0,
-              Math.round(params.progress * options.barsize),
-          ) +
-          options.barIncompleteString.slice(
-              Math.round(params.progress * options.barsize),
-          );
+                    options.barCompleteChar.repeat(filled) +
+                    options.barIncompleteChar.repeat(options.barsize - filled);
 
                 const pct = Math.round(params.progress * 100);
                 const workerLabel = colors.cyan(
