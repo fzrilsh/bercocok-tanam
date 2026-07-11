@@ -1,4 +1,5 @@
-const { getConfig, SHARED_SELECTORS } = require("./config");
+const fs = require("fs");
+const { getConfig, getResultFile, SHARED_SELECTORS } = require("./config");
 const {
     sleep,
     readAccounts,
@@ -10,6 +11,7 @@ const {
     acquireAccountLock,
     releaseAccountLock,
     tryAcquireAccountLock,
+    ensureFileExists,
 } = require("./utils");
 const { launchBrowser } = require("./browser");
 const {
@@ -60,6 +62,24 @@ async function handlePostLogin(page, log) {
     }
 }
 
+async function waitForDashboard(page, log) {
+    const config = getConfig();
+
+    log("Waiting for Kiro dashboard...");
+    await page.waitForURL(
+        (url) => {
+            const href = url.href;
+            return (
+                href.includes("app.kiro.dev/home") &&
+                !href.includes("oidcJwt")
+            );
+        },
+        { timeout: config.timeouts.navigation }
+    );
+
+    log("Redirected to Kiro dashboard!");
+}
+
 async function getRefreshToken(page, log) {
     const config = getConfig();
 
@@ -76,6 +96,19 @@ async function getRefreshToken(page, log) {
     log(`Got RefreshToken (${refreshToken.value.slice(0, 20)}...)`);
 
     return refreshToken.value;
+}
+
+function saveRefreshToken(email, refreshToken, log) {
+    const resultFile = getResultFile("kiro");
+
+    ensureFileExists(resultFile);
+
+    fs.appendFileSync(
+        resultFile,
+        `${email}|${refreshToken}\n`,
+    );
+
+    log(`Refresh token saved to ${resultFile}`);
 }
 
 async function importRefreshToken(refreshToken, log) {
@@ -120,11 +153,16 @@ async function processKiroAccount(
     updateProgress,
 ) {
     const config = getConfig();
+    const proxy = account.proxy || null;
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
     log(`Launching browser for ${account.email}`);
 
-    const { browser, page } = await launchBrowser(browserArgsIndex, workerIndex);
+    const { browser, page } = await launchBrowser(
+        browserArgsIndex,
+        workerIndex,
+        proxy,
+    );
 
     try {
         updateProgress({ step: STEPS.NAVIGATING });
@@ -134,8 +172,12 @@ async function processKiroAccount(
         await completeGoogleLogin(page, account, log);
         await handlePostLogin(page, log);
 
+        updateProgress({ step: STEPS.WAITING });
+        await waitForDashboard(page, log);
+
         updateProgress({ step: STEPS.GETTING_TOKEN });
         const refreshToken = await getRefreshToken(page, log);
+        saveRefreshToken(account.email, refreshToken, log);
 
         updateProgress({ step: STEPS.IMPORTING });
         await importRefreshToken(refreshToken, log);
