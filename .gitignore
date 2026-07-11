@@ -2,7 +2,7 @@ node_modules/
 .env
 logs/
 accounts.txt
-cf_keys.txt
+*_keys.txt
 errorAccounts.txt
 package-lock.json
 .claude

@@ -8,7 +8,7 @@ const DEFAULT_CHROME_PATH =
   "/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome";
 const DEFAULT_ROUTER_URL = "http://127.0.0.1:20128/";
 const DEFAULT_ACCOUNT_FILE_NAME = "accounts.txt";
-const DEFAULT_RESULT_FILE_NAME = "cf_keys.txt";
+const DEFAULT_RESULT_FILE_TEMPLATE = "{provider}_keys.txt";
 const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "errorAccounts.txt";
 
 const DEFAULT_BROWSER_ARGS_SETS = [
@@ -124,10 +124,7 @@ function createConfig() {
             ROOT_DIR,
             env.ACCOUNT_FILE || DEFAULT_ACCOUNT_FILE_NAME,
         ),
-        resultFile: path.resolve(
-            ROOT_DIR,
-            env.RESULT_FILE || DEFAULT_RESULT_FILE_NAME,
-        ),
+        resultFileTemplate: env.RESULT_FILE || DEFAULT_RESULT_FILE_TEMPLATE,
         errorAccountFile: path.resolve(
             ROOT_DIR,
             env.ERROR_ACCOUNT_FILE || DEFAULT_ERROR_ACCOUNT_FILE_NAME,
@@ -202,10 +199,18 @@ function getConfig() {
     return CONFIG;
 }
 
+function getResultFile(provider) {
+    const config = getConfig();
+    const fileName = config.resultFileTemplate.replace(/\{provider\}/g, provider);
+
+    return path.resolve(ROOT_DIR, fileName);
+}
+
 module.exports = {
     ROOT_DIR,
     ENV_PATH,
     getConfig,
+    getResultFile,
     reloadConfig,
     createConfig,
     updateEnvValue,

@@ -1,4 +1,4 @@
-const { getConfig, SHARED_SELECTORS } = require("./config");
+const { getConfig, getResultFile, SHARED_SELECTORS } = require("./config");
 const {
     sleep,
     readAccounts,
@@ -211,17 +211,17 @@ async function harvestToken(page, log) {
 }
 
 function saveToken(accountId, token, log) {
-    const config = getConfig();
+    const resultFile = getResultFile("cloudflare");
     const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
 
-    ensureFileExists(config.resultFile);
+    ensureFileExists(resultFile);
 
     fs.appendFileSync(
-        config.resultFile,
+        resultFile,
         `cloudflare_${accountId.slice(0, 6)}|${baseUrl}|${token}|${MODELS}\n`,
     );
 
-    log(`Token saved to ${config.resultFile}`);
+    log(`Token saved to ${resultFile}`);
 }
 
 async function validateProvider(apiKey, accountId, log) {
