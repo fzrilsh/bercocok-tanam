@@ -11,6 +11,8 @@
 
 Automated CLI tool for harvesting Kiro refresh tokens and Cloudflare Workers AI API tokens using Puppeteer. Features multi-worker parallel processing, detailed per-account reporting, and comprehensive error tracking.
 
+![All-in-One Automation Screenshot](assets/screenshot.png)
+
 ## ✨ Features
 
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
@@ -21,7 +23,7 @@ Automated CLI tool for harvesting Kiro refresh tokens and Cloudflare Workers AI 
 - 🎯 **Smart Account Queue Management** - Automatic account locking prevents duplicate processing
 - ❌ **Comprehensive Error Tracking** - All failed accounts logged with timestamps and automation type
 - 🔄 **Account Change Detection** - Confirmation prompt when account count changes before automation
-- 🌐 **Proxy Support** - Cloudflare automation supports proxy configuration per account
+- 🌐 **Proxy Support** - Both Kiro and Cloudflare automations support proxy configuration per account
 - ⚙️ **Interactive Settings** - Easy configuration management through CLI interface
 
 ## 📋 Requirements
@@ -57,44 +59,48 @@ cp .env.example .env
 Create a `.env` file in the project root:
 
 ```env
-# Router URL for token import (default: http://127.0.0.1:20128/)
 ROUTER_URL=http://your-router-url:20128/
-
-# Browser settings
-PW_HEADLESS=0                 # 0 = visible browser, 1 = headless mode
-BROWSER_COUNT=1               # Number of parallel browser instances
-BROWSER_SLOW_MO=2            # Delay between actions (ms)
-
-# Chrome executable path
+PW_HEADLESS=1
+BROWSER_COUNT=4
+BROWSER_SLOW_MO=2
 CHROME_EXECUTABLE_PATH=/path/to/chrome
-
-# File paths
 ACCOUNT_FILE=accounts.txt
-RESULT_FILE=cf_keys.txt
+RESULT_FILE={provider}_keys.txt
 ERROR_ACCOUNT_FILE=errorAccounts.txt
-
-# Delays (milliseconds)
 DELAY_BEFORE_NEXT_CLICK_MS=1000
 DELAY_BETWEEN_ACCOUNTS_MS=3000
 DELAY_BEFORE_BROWSER_CLOSE_MS=3000
 DELAY_BEFORE_READING_COOKIES_MS=5000
-
-# Timeouts (milliseconds)
 TIMEOUT_NAVIGATION_MS=60000
 TIMEOUT_DEFAULT_MS=15000
 TIMEOUT_SHORT_MS=10000
 ```
+
+| Variable | Description | Default |
+|---|---|---|
+| `ROUTER_URL` | 9Router endpoint for token import | `http://127.0.0.1:20128/` |
+| `PW_HEADLESS` | `1` = headless, `0` = visible browser | `1` |
+| `BROWSER_COUNT` | Number of parallel browser instances | `1` |
+| `BROWSER_SLOW_MO` | Delay between browser actions (ms) | `2` |
+| `CHROME_EXECUTABLE_PATH` | Path to Chrome/Chromium executable | Auto-detect |
+| `ACCOUNT_FILE` | Path to accounts file | `accounts.txt` |
+| `RESULT_FILE` | The system automatically replaces `{provider}` with the automation name (`kiro` or `cloudflare`) | `{provider}_keys.txt` |
+| `ERROR_ACCOUNT_FILE` | Log file for failed accounts | `errorAccounts.txt` |
+| `DELAY_BEFORE_NEXT_CLICK_MS` | Delay before next click action | `1000` |
+| `DELAY_BETWEEN_ACCOUNTS_MS` | Delay between processing accounts | `3000` |
+| `DELAY_BEFORE_BROWSER_CLOSE_MS` | Delay before closing browser | `3000` |
+| `DELAY_BEFORE_READING_COOKIES_MS` | Delay before reading cookies | `5000` |
+| `TIMEOUT_NAVIGATION_MS` | Page navigation timeout | `60000` |
+| `TIMEOUT_DEFAULT_MS` | Default element wait timeout | `15000` |
+| `TIMEOUT_SHORT_MS` | Short element wait timeout | `10000` |
 
 ## 📝 Account File Format
 
 Create `accounts.txt` with one account per line:
 
 ```
-# Kiro accounts (email|password)
 user1@gmail.com|password123
 user2@gmail.com|password456
-
-# Cloudflare accounts with proxy (email|password|proxy)
 user3@gmail.com|password789|http://proxy-server:8080
 user4@gmail.com|password321|http://user:pass@proxy:8080
 ```
@@ -103,7 +109,7 @@ user4@gmail.com|password321|http://user:pass@proxy:8080
 - One account per line
 - Fields separated by `|` (pipe)
 - Lines starting with `#` are comments
-- Proxy is optional (Cloudflare only)
+- Proxy is optional (supported by both Kiro and Cloudflare)
 
 ## 🎮 Usage
 
@@ -129,23 +135,6 @@ If you modify `accounts.txt` while at the menu, the system will detect changes w
 
 - Select `Y` to proceed with the new account list
 - Select `n` to return to menu and review changes
-
-## ⚠️ Important: Headless Mode
-
-> **💡 Recommendation: Use Non-Headless Mode (`PW_HEADLESS=0`)**
->
-> Non-headless mode (visible browser) significantly reduces errors because:
-> - **Google CAPTCHA detection is minimal** - Visible browsers appear more "human"
-> - **Always passes CAPTCHA challenges** - Real rendering triggers fewer bot detection flags
-> - **Better success rate** - Lower chance of being flagged as automated traffic
-> - **Easier debugging** - You can see exactly what's happening
->
-> Headless mode (`PW_HEADLESS=1`) is faster but more likely to trigger:
-> - CAPTCHA challenges
-> - Account verification prompts
-> - Bot detection mechanisms
->
-> **For production use, always prefer `PW_HEADLESS=0`** for maximum reliability.
 
 ## 📊 Reports
 
@@ -190,7 +179,9 @@ After each automation run, you'll see a detailed report:
 
 ## 📁 Output Files
 
-- **`cf_keys.txt`** - Successfully harvested Cloudflare tokens
+- **`{provider}_keys.txt`** - Token output files, generated per automation:
+  - `kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
+  - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
 - **`errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
 - **`logs/`** - Detailed execution logs with timestamps
 
@@ -216,8 +207,11 @@ bercocok-tanam/
 │   ├── reporter.js       # Report generation and formatting
 │   ├── settings.js       # Interactive settings menu
 │   └── utils.js          # Utility functions and helpers
+├── assets/
+│   └── screenshot.png    # CLI screenshot
 ├── accounts.txt          # Account list (user-created)
-├── cf_keys.txt           # Cloudflare tokens output
+├── kiro_keys.txt         # Kiro tokens output (auto-generated)
+├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
 ├── errorAccounts.txt     # Failed accounts log
 ├── logs/                 # Execution logs
 ├── .env                  # Configuration (user-created)
@@ -244,7 +238,6 @@ bercocok-tanam/
 
 ### "RefreshToken cookie not found"
 - Google may require additional verification
-- Try non-headless mode (`PW_HEADLESS=0`)
 - Check if account credentials are correct
 - Wait a few minutes and retry (rate limiting)
 
@@ -259,14 +252,14 @@ bercocok-tanam/
 - Test connection: `curl http://127.0.0.1:20128/`
 - Ensure firewall allows connections to router port
 - Check router logs for import errors
+- Disable **Require Login** in 9Router (**Settings → Security**) — the import API will be rejected if authentication is enabled
 
-### Proxy errors (Cloudflare only)
+### Proxy errors
 - Verify proxy format: `http://host:port` or `http://user:pass@host:port`
 - Test proxy connection separately
 - Try without proxy first to isolate issue
 
 ### CAPTCHA challenges
-- **Solution: Use non-headless mode** (`PW_HEADLESS=0`)
 - Reduce `BROWSER_COUNT` (fewer parallel instances)
 - Increase delays between actions
 - Ensure browser profile is clean (no previous bot flags)
@@ -281,7 +274,6 @@ Contributions welcome! Please ensure:
 - Code follows ESLint configuration (4-space indent)
 - All user-facing text is in English
 - Comprehensive error handling
-- Comments for complex logic
 
 ---
 
