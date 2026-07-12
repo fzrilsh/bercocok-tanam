@@ -1,15 +1,41 @@
 {
   "name": "bercocok-tanam",
   "version": "1.0.0",
-  "description": "CLI farming tool — Kiro + Cloudflare automation",
+  "description": "Automated CLI tool for harvesting Kiro OAuth refresh tokens and Cloudflare Workers AI API tokens with multi-worker parallel processing and comprehensive error tracking",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
-  "keywords": [],
-  "author": "",
+  "keywords": [
+    "kiro",
+    "cloudflare",
+    "automation",
+    "cli",
+    "puppeteer",
+    "token-harvesting",
+    "oauth",
+    "workers-ai",
+    "parallel-processing",
+    "browser-automation"
+  ],
+  "author": {
+    "name": "Fazril Syaveral Hillaby",
+    "email": "fazril.hillaby@binus.ac.id",
+    "url": "https://www.fazrilsh.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/fzrilsh/bercocok-tanam.git"
+  },
+  "bugs": {
+    "url": "https://github.com/fzrilsh/bercocok-tanam/issues"
+  },
+  "homepage": "https://github.com/fzrilsh/bercocok-tanam#readme",
+  "engines": {
+    "node": ">=16.0.0"
+  },
   "license": "ISC",
   "dependencies": {
     "ansi-colors": "^4.1.3",
