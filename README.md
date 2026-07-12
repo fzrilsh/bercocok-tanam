@@ -9,21 +9,23 @@
 [![Code Style: ESLint](https://img.shields.io/badge/code_style-ESLint-5e5ce6.svg)](https://eslint.org/)
 [![Sponsor on Patreon](https://img.shields.io/badge/Patreon-Support%20Development-ff424d?logo=patreon&logoColor=white)](https://patreon.com/fazrilsh)
 
-Automated CLI tool for harvesting Kiro refresh tokens and Cloudflare Workers AI API tokens using Puppeteer. Features multi-worker parallel processing, detailed per-account reporting, and comprehensive error tracking.
+Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, and webshare.io proxies using Puppeteer. Features multi-worker parallel processing, proxy pool management, detailed per-account reporting, and comprehensive error tracking.
 
 ![All-in-One Automation Screenshot](assets/screenshot.png)
 
 ## ✨ Features
 
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
-- ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation  
-- 🚀 **All-in-One Mode** - Run both automations in parallel
+- ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation
+- 🔐 **Proxy Automation** - Webshare.io proxy harvesting with Google OAuth
+- 🚀 **All-in-One Mode** - Run both Kiro and Cloudflare automations in parallel
+- 🌐 **Proxy Pool System** - Shared proxy pool with automatic worker assignment and locking
 - 👷 **Multi-Worker Parallel Processing** - Configure multiple browser instances for faster processing
 - 📊 **Detailed Reporting** - Per-worker and per-account statistics with timing breakdown
 - 🎯 **Smart Account Queue Management** - Automatic account locking prevents duplicate processing
 - ❌ **Comprehensive Error Tracking** - All failed accounts logged with timestamps and automation type
 - 🔄 **Account Change Detection** - Confirmation prompt when account count changes before automation
-- 🌐 **Proxy Support** - Both Kiro and Cloudflare automations support proxy configuration per account
+- 🔌 **Flexible Proxy Support** - Per-account proxies or shared proxy pool for all automations
 - ⚙️ **Interactive Settings** - Easy configuration management through CLI interface
 
 ## 📋 Requirements
@@ -67,6 +69,7 @@ CHROME_EXECUTABLE_PATH=/path/to/chrome
 ACCOUNT_FILE=accounts.txt
 RESULT_FILE={provider}_keys.txt
 ERROR_ACCOUNT_FILE=errorAccounts.txt
+PROXY_POOL_FILE=proxy_keys.txt
 DELAY_BEFORE_NEXT_CLICK_MS=1000
 DELAY_BETWEEN_ACCOUNTS_MS=3000
 DELAY_BEFORE_BROWSER_CLOSE_MS=3000
@@ -84,8 +87,9 @@ TIMEOUT_SHORT_MS=10000
 | `BROWSER_SLOW_MO` | Delay between browser actions (ms) | `2` |
 | `CHROME_EXECUTABLE_PATH` | Path to Chrome/Chromium executable | Auto-detect |
 | `ACCOUNT_FILE` | Path to accounts file | `accounts.txt` |
-| `RESULT_FILE` | The system automatically replaces `{provider}` with the automation name (`kiro` or `cloudflare`) | `{provider}_keys.txt` |
+| `RESULT_FILE` | The system automatically replaces `{provider}` with the automation name (`kiro`, `cloudflare`, or `proxy`) | `{provider}_keys.txt` |
 | `ERROR_ACCOUNT_FILE` | Log file for failed accounts | `errorAccounts.txt` |
+| `PROXY_POOL_FILE` | Shared proxy pool file (optional) - workers auto-pick available proxies | `proxy_keys.txt` |
 | `DELAY_BEFORE_NEXT_CLICK_MS` | Delay before next click action | `1000` |
 | `DELAY_BETWEEN_ACCOUNTS_MS` | Delay between processing accounts | `3000` |
 | `DELAY_BEFORE_BROWSER_CLOSE_MS` | Delay before closing browser | `3000` |
@@ -109,7 +113,27 @@ user4@gmail.com|password321|http://user:pass@proxy:8080
 - One account per line
 - Fields separated by `|` (pipe)
 - Lines starting with `#` are comments
-- Proxy is optional (supported by both Kiro and Cloudflare)
+- Proxy is optional (supported by all automations)
+
+### Proxy Pool (Optional)
+
+Instead of specifying proxies per account, you can use a shared proxy pool. Create a proxy pool file (e.g., `proxy_keys.txt`):
+
+```
+191.96.254.138:6185:username:password
+45.38.107.97:6014:username:password
+198.105.121.200:6462:username:password
+```
+
+**Format:** `ip:port:username:password` (one proxy per line)
+
+**How it works:**
+- Workers automatically pick available proxies from the pool
+- Proxies are locked while in use (other workers wait)
+- Proxy is released after browser closes
+- **Priority:** Account proxy > Pool proxy > No proxy
+
+Enable by setting `PROXY_POOL_FILE=proxy_keys.txt` in `.env`
 
 ## 🎮 Usage
 
@@ -119,10 +143,11 @@ npm start
 
 # Choose from menu:
 # 1. 🔑 Kiro Automation
-# 2. ☁️  Cloudflare Automation  
-# 3. 🚀 All-in-One Automation
-# 4. ⚙️  Settings
-# 5. 🚪 Exit
+# 2. ☁️  Cloudflare Automation
+# 3. 🔐 Proxy Automation
+# 4. 🚀 All-in-One Automation
+# 5. ⚙️  Settings
+# 6. 🚪 Exit
 ```
 
 ### Account Change Confirmation
@@ -182,6 +207,7 @@ After each automation run, you'll see a detailed report:
 - **`{provider}_keys.txt`** - Token output files, generated per automation:
   - `kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
   - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
+  - `proxy_keys.txt` — Webshare.io proxies (format: `ip:port:username:password`)
 - **`errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
 - **`logs/`** - Detailed execution logs with timestamps
 
@@ -203,6 +229,7 @@ bercocok-tanam/
 │   ├── config.js         # Configuration management
 │   ├── google-login.js   # Google authentication helpers
 │   ├── kiro.js           # Kiro token harvesting logic
+│   ├── proxy.js          # Webshare.io proxy harvesting logic
 │   ├── progress.js       # Progress bar and status display
 │   ├── reporter.js       # Report generation and formatting
 │   ├── settings.js       # Interactive settings menu
@@ -212,6 +239,7 @@ bercocok-tanam/
 ├── accounts.txt          # Account list (user-created)
 ├── kiro_keys.txt         # Kiro tokens output (auto-generated)
 ├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
+├── proxy_keys.txt        # Proxy list output (auto-generated)
 ├── errorAccounts.txt     # Failed accounts log
 ├── logs/                 # Execution logs
 ├── .env                  # Configuration (user-created)
