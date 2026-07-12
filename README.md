@@ -268,12 +268,41 @@ bercocok-tanam/
 
 ISC
 
+## 👤 Author
+
+**Fazril Syaveral Hillaby**
+- GitHub: [@fzrilsh](https://github.com/fzrilsh)
+- Patreon: [Support Development](https://patreon.com/fazrilsh)
+
+## 🙏 Acknowledgements
+
+- **[9Router](https://github.com/9router/9router)** - Backend token management service that powers the import functionality
+- **[Puppeteer](https://pptr.dev/)** & **[puppeteer-extra-plugin-stealth](https://github.com/berstend/puppeteer-extra)** - Browser automation framework and anti-detection capabilities
+- **[Inquirer.js](https://github.com/SBoudrias/Inquirer.js)** - Interactive CLI prompts
+- **[node-cli-progress](https://github.com/npkgz/cli-progress)** - Terminal progress bars
+- **[ansi-colors](https://github.com/doowb/ansi-colors)** - Terminal color styling
+
+Special thanks to the open-source community for making automation tools accessible.
+
 ## 🤝 Contributing
 
 Contributions welcome! Please ensure:
 - Code follows ESLint configuration (4-space indent)
 - All user-facing text is in English
 - Comprehensive error handling
+- Test changes with multiple accounts before submitting PR
+
+## 💬 Support & Community
+
+- **Issues**: [GitHub Issues](https://github.com/fzrilsh/bercocok-tanam/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/fzrilsh/bercocok-tanam/discussions)
+- **Sponsor**: [Patreon](https://patreon.com/fazrilsh)
+
+For security vulnerabilities, please email directly instead of opening a public issue.
+
+## 📜 Changelog
+
+See [commit history](https://github.com/fzrilsh/bercocok-tanam/commits/main) for detailed changes.
 
 ---
 
