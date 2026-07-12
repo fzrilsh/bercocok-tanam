@@ -10,6 +10,7 @@ const DEFAULT_ROUTER_URL = "http://127.0.0.1:20128/";
 const DEFAULT_ACCOUNT_FILE_NAME = "accounts.txt";
 const DEFAULT_RESULT_FILE_TEMPLATE = "{provider}_keys.txt";
 const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "errorAccounts.txt";
+const DEFAULT_PROXY_POOL_FILE_NAME = "proxy_keys.txt";
 
 const DEFAULT_BROWSER_ARGS_SETS = [
     [
@@ -129,6 +130,7 @@ function createConfig() {
             ROOT_DIR,
             env.ERROR_ACCOUNT_FILE || DEFAULT_ERROR_ACCOUNT_FILE_NAME,
         ),
+        proxyPoolFile: env.PROXY_POOL_FILE ? path.resolve(ROOT_DIR, env.PROXY_POOL_FILE) : null,
         browserArgsSets: parseBrowserArgsSets(env.BROWSER_ARGS_SETS),
         delays: {
             beforeNextClick: toPositiveNumber(env.DELAY_BEFORE_NEXT_CLICK_MS, 1000),

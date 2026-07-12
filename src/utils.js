@@ -246,6 +246,7 @@ function createFileLogger() {
 }
 
 const activeAccounts = new Set();
+const activeProxies = new Set();
 
 async function acquireAccountLock(email, log, progressUpdate) {
     if (activeAccounts.has(email)) {
@@ -277,6 +278,53 @@ function releaseAccountLock(email) {
     activeAccounts.delete(email);
 }
 
+function readProxyPool() {
+    const config = getConfig();
+    if (!config.proxyPoolFile) {return [];}
+
+    const lines = readLines(config.proxyPoolFile);
+    return lines
+        .map(line => line.trim())
+        .filter(line => line && !line.startsWith("#"));
+}
+
+async function acquireProxy(log, progressUpdate) {
+    const proxies = readProxyPool();
+    if (proxies.length === 0) {return null;}
+
+    while (true) {
+        for (const proxy of proxies) {
+            if (!activeProxies.has(proxy)) {
+                activeProxies.add(proxy);
+                if (log) {log(`[Proxy] Acquired: ${proxy.split(':')[0]}`);}
+                return proxy;
+            }
+        }
+
+        if (log) {log('[Proxy] All proxies in use, waiting...');}
+        if (progressUpdate) {progressUpdate({ step: '⏳ Antri proxy...' });}
+        await sleep(2000);
+    }
+}
+
+function tryAcquireProxy() {
+    const proxies = readProxyPool();
+    if (proxies.length === 0) {return null;}
+
+    for (const proxy of proxies) {
+        if (!activeProxies.has(proxy)) {
+            activeProxies.add(proxy);
+            return proxy;
+        }
+    }
+
+    return null;
+}
+
+function releaseProxy(proxy) {
+    if (proxy) {activeProxies.delete(proxy);}
+}
+
 module.exports = {
     randomUA,
     sleep,
@@ -292,4 +340,8 @@ module.exports = {
     acquireAccountLock,
     tryAcquireAccountLock,
     releaseAccountLock,
+    readProxyPool,
+    acquireProxy,
+    tryAcquireProxy,
+    releaseProxy,
 };

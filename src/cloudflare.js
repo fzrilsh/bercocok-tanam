@@ -11,6 +11,8 @@ const {
     acquireAccountLock,
     releaseAccountLock,
     tryAcquireAccountLock,
+    acquireProxy,
+    releaseProxy,
 } = require("./utils");
 const { launchBrowser } = require("./browser");
 const {
@@ -317,7 +319,13 @@ async function processCFAccount(
     updateProgress,
 ) {
     const config = getConfig();
-    const proxy = account.proxy || null;
+    let poolProxy = null;
+    let proxy = account.proxy || null;
+
+    if (!proxy && config.proxyPoolFile) {
+        poolProxy = await acquireProxy(log, updateProgress);
+        proxy = poolProxy;
+    }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
     log(`Launching browser for ${account.email}`);
@@ -361,6 +369,10 @@ async function processCFAccount(
     } finally {
         await browser.close();
         log("Browser closed.");
+        if (poolProxy) {
+            releaseProxy(poolProxy);
+            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+        }
     }
 }
 
