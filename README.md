@@ -42,7 +42,7 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
 
 ```bash
 # Clone the repository
-git clone <repository-url>
+git clone https://github.com/fzrilsh/bercocok-tanam
 cd bercocok-tanam
 
 # Install dependencies
