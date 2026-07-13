@@ -444,7 +444,7 @@ async function runProxyAutomation(sharedProgress = null) {
         const browserArgsIndex = i % config.browserArgsSets.length;
 
         if (i > 0) {
-            await sleep(3000); // 3s stagger between workers
+            await sleep(10000); // 10s stagger between workers
         }
 
         workerPromises.push(
