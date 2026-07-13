@@ -55,7 +55,10 @@ async function handlePostLogin(page, log) {
     try {
         log("Clicking Login/Allow/Continue...");
 
+        // Scroll to bottom to ensure button is in viewport for headless mode
+        // Puppeteer clicks fail silently on off-screen elements in headless
         await page.keyboard.press('End');
+
         await clickFirstVisibleSelector(
             page,
             SHARED_SELECTORS.loginOptions,
@@ -75,7 +78,7 @@ async function waitForDashboard(page, log) {
         await page.waitForFunction(
             () => {
                 const url = window.location.href;
-    
+
                 return (
                     url.includes("app.kiro.dev") &&
                     url.includes("/home")
@@ -84,8 +87,7 @@ async function waitForDashboard(page, log) {
             { timeout: config.timeouts.navigation },
         );
     } catch (error) {
-        clearInterval(a)
-        throw error
+        throw error;
     }
 
     log("Redirected to Kiro dashboard!");
