@@ -74,21 +74,17 @@ async function waitForDashboard(page, log) {
 
     log("Waiting for Kiro dashboard...");
 
-    try {
-        await page.waitForFunction(
-            () => {
-                const url = window.location.href;
+    await page.waitForFunction(
+        () => {
+            const url = window.location.href;
 
-                return (
-                    url.includes("app.kiro.dev") &&
-                    url.includes("/home")
-                );
-            },
-            { timeout: config.timeouts.navigation },
-        );
-    } catch (error) {
-        throw error;
-    }
+            return (
+                url.includes("app.kiro.dev") &&
+                url.includes("/home")
+            );
+        },
+        { timeout: config.timeouts.navigation },
+    );
 
     log("Redirected to Kiro dashboard!");
 }
