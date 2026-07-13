@@ -22,11 +22,21 @@ async function clickSelector(page, selector, options = {}) {
         await sleep(delayBeforeClick);
     }
 
-    // Use JavaScript click for headless mode reliability
-    await page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        if (el) el.click();
-    }, selector);
+    // Check if Puppeteer-specific selector (not standard CSS)
+    const isPuppeteerSelector = selector.includes('::-p-') ||
+                                 selector.includes('>>>') ||
+                                 selector.startsWith('/');
+
+    if (isPuppeteerSelector) {
+        // Must use Puppeteer click for Puppeteer selectors
+        await page.click(selector);
+    } else {
+        // Use JavaScript click for standard CSS (more reliable in headless)
+        await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            if (el) el.click();
+        }, selector);
+    }
 }
 
 async function typeIntoSelector(page, selector, value, options = {}) {
@@ -58,11 +68,21 @@ async function clickFirstVisibleSelector(page, selectors, timeout) {
 
     await sleep(config.delays.beforeNextClick);
 
-    // Use JavaScript click for headless mode reliability
-    await page.evaluate((sel) => {
-        const el = document.querySelector(sel);
-        if (el) el.click();
-    }, foundSelector);
+    // Check if Puppeteer-specific selector
+    const isPuppeteerSelector = foundSelector.includes('::-p-') ||
+                                 foundSelector.includes('>>>') ||
+                                 foundSelector.startsWith('/');
+
+    if (isPuppeteerSelector) {
+        // Must use Puppeteer click for Puppeteer selectors
+        await page.click(foundSelector);
+    } else {
+        // Use JavaScript click for standard CSS (more reliable in headless)
+        await page.evaluate((sel) => {
+            const el = document.querySelector(sel);
+            if (el) el.click();
+        }, foundSelector);
+    }
 }
 
 async function completeGoogleLogin(page, account, log) {
