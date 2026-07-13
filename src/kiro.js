@@ -54,6 +54,8 @@ async function handlePostLogin(page, log) {
 
     try {
         log("Clicking Login/Allow/Continue...");
+
+        await page.keyboard.press('End');
         await clickFirstVisibleSelector(
             page,
             SHARED_SELECTORS.loginOptions,
@@ -68,18 +70,23 @@ async function waitForDashboard(page, log) {
     const config = getConfig();
 
     log("Waiting for Kiro dashboard...");
-    await page.waitForFunction(
-        () => {
-            const url = window.location.href;
 
-            return (
-                url.includes("app.kiro.dev") &&
-                url.includes("/home") &&
-                !url.includes("oidcJwt")
-            );
-        },
-        { timeout: config.timeouts.navigation },
-    );
+    try {
+        await page.waitForFunction(
+            () => {
+                const url = window.location.href;
+    
+                return (
+                    url.includes("app.kiro.dev") &&
+                    url.includes("/home")
+                );
+            },
+            { timeout: config.timeouts.navigation },
+        );
+    } catch (error) {
+        clearInterval(a)
+        throw error
+    }
 
     log("Redirected to Kiro dashboard!");
 }

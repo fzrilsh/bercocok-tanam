@@ -39,6 +39,7 @@ const SHARED_SELECTORS = {
         "::-p-text(Continue)",
         "::-p-text(Accept)",
         "::-p-text(Lanjutkan)",
+        "main > div:nth-child(3) > div > div > div:nth-child(2) > div > div > button"
     ],
 };
 
