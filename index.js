@@ -1,6 +1,6 @@
 const path = require("path");
 const { getConfig } = require("./src/config");
-const { readAccounts, formatDuration } = require("./src/utils");
+const { readAccounts, formatDuration, testAllProxies } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runProxyAutomation } = require("./src/proxy");
@@ -235,7 +235,8 @@ async function main() {
                     { name: "3. 🔐 Proxy Automation", value: "proxy" },
                     { name: "4. 🚀 All-in-One Automation", value: "all" },
                     { name: "5. ⚙️  Settings", value: "settings" },
-                    { name: "6. 🚪 Exit", value: "exit" },
+                    { name: "6. 🔍 Test Proxies", value: "test-proxies" },
+                    { name: "7. 🚪 Exit", value: "exit" },
                 ],
             },
         ]);
@@ -304,6 +305,11 @@ async function main() {
                     }
                 }
                 await runAllInOne();
+                break;
+            }
+            case "test-proxies": {
+                await testAllProxies();
+                await waitForEnter();
                 break;
             }
             case "settings":

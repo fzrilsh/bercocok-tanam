@@ -337,6 +337,78 @@ function releaseProxy(proxy) {
     if (proxy) {activeProxies.delete(proxy);}
 }
 
+async function testProxy(proxy, index, total) {
+    const { launchBrowser } = require('./browser');
+    const proxyDisplay = proxy.includes('@')
+        ? proxy.split('@')[1].split(':')[0]
+        : proxy.split('://')[1]?.split(':')[0] || proxy.split(':')[0];
+
+    process.stdout.write(`\rTesting proxy ${index}/${total}: ${proxyDisplay}...`);
+
+    try {
+        const { browser, page } = await launchBrowser(0, 0, proxy);
+
+        await page.goto('https://www.google.com', {
+            waitUntil: 'domcontentloaded',
+            timeout: 15000
+        });
+
+        await browser.close();
+        process.stdout.write(`\rTesting proxy ${index}/${total}: ${proxyDisplay}... ✅\n`);
+        return { proxy, working: true, proxyDisplay };
+    } catch (error) {
+        process.stdout.write(`\rTesting proxy ${index}/${total}: ${proxyDisplay}... ❌\n`);
+        return { proxy, working: false, error: error.message, proxyDisplay };
+    }
+}
+
+async function testAllProxies() {
+    const proxies = readProxyPool();
+
+    if (proxies.length === 0) {
+        console.log('\n❌ No proxies found in proxy pool.');
+        console.log('   Set PROXY_POOL_FILE in your environment or add proxies to proxy_pool.txt\n');
+        return null;
+    }
+
+    console.log(`\n🔍 Testing ${proxies.length} proxies...\n`);
+
+    const results = [];
+    for (let i = 0; i < proxies.length; i++) {
+        const result = await testProxy(proxies[i], i + 1, proxies.length);
+        results.push(result);
+    }
+
+    const working = results.filter(r => r.working);
+    const failed = results.filter(r => !r.working);
+
+    console.log('\n' + '═'.repeat(60));
+    console.log(`✅ Working proxies: ${working.length}/${proxies.length}`);
+    console.log(`❌ Failed proxies: ${failed.length}/${proxies.length}`);
+    console.log('═'.repeat(60));
+
+    if (working.length > 0) {
+        console.log('\n📋 Working proxies:');
+        working.forEach((r, i) => {
+            console.log(`   ${(i + 1).toString().padStart(2)}. ${r.proxyDisplay}`);
+        });
+    }
+
+    if (failed.length > 0) {
+        console.log('\n❌ Failed proxies:');
+        failed.forEach((r, i) => {
+            const errorMsg = r.error.includes('ERR_')
+                ? r.error.split('net::')[1]?.split(' ')[0] || r.error.substring(0, 30)
+                : r.error.substring(0, 30);
+            console.log(`   ${(i + 1).toString().padStart(2)}. ${r.proxyDisplay} - ${errorMsg}`);
+        });
+    }
+
+    console.log('');
+
+    return { working, failed, total: proxies.length };
+}
+
 module.exports = {
     randomUA,
     sleep,
@@ -356,4 +428,5 @@ module.exports = {
     acquireProxy,
     tryAcquireProxy,
     releaseProxy,
+    testAllProxies,
 };
