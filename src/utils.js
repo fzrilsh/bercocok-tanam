@@ -247,6 +247,8 @@ function createFileLogger() {
 
 const activeAccounts = new Set();
 const activeProxies = new Set();
+const proxyLastUsed = new Map(); // IP:port -> last used timestamp
+const PROXY_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown
 
 async function acquireAccountLock(email, log, progressUpdate) {
     if (activeAccounts.has(email)) {
@@ -300,22 +302,58 @@ function readProxyPool() {
         });
 }
 
+function getProxyIP(proxy) {
+    // Extract IP:port from proxy string (base cooldown on IP, not credentials)
+    // Format: http://user:pass@ip:port -> ip:port
+    if (proxy.includes('@')) {
+        return proxy.split('@')[1];
+    }
+    // Format: http://ip:port -> ip:port
+    if (proxy.includes('://')) {
+        return proxy.split('://')[1];
+    }
+    // Fallback: ip:port...
+    return proxy.split(':').slice(0, 2).join(':');
+}
+
 async function acquireProxy(log, progressUpdate) {
     const proxies = readProxyPool();
     if (proxies.length === 0) {return null;}
 
     while (true) {
+        let earliestAvailable = Infinity;
+
         for (const proxy of proxies) {
-            if (!activeProxies.has(proxy)) {
+            const proxyIP = getProxyIP(proxy);
+            const lastUsed = proxyLastUsed.get(proxyIP) || 0;
+            const timeSinceUse = Date.now() - lastUsed;
+            const cooldownRemaining = PROXY_COOLDOWN_MS - timeSinceUse;
+
+            // Check if proxy available (not in use AND past cooldown)
+            if (!activeProxies.has(proxy) && cooldownRemaining <= 0) {
                 activeProxies.add(proxy);
-                if (log) {log(`[Proxy] Acquired: ${proxy.split(':')[0]}`);}
+                proxyLastUsed.set(proxyIP, Date.now());
+                if (log) {log(`[Proxy] Acquired: ${proxyIP.split(':')[0]}`);}
                 return proxy;
+            }
+
+            // Track earliest available proxy
+            if (cooldownRemaining > 0 && cooldownRemaining < earliestAvailable) {
+                earliestAvailable = cooldownRemaining;
             }
         }
 
-        if (log) {log('[Proxy] All proxies in use, waiting...');}
-        if (progressUpdate) {progressUpdate({ step: '⏳ Antri proxy...' });}
-        await sleep(2000);
+        // All proxies in use or cooldown
+        if (earliestAvailable < Infinity) {
+            const waitSec = Math.ceil(earliestAvailable / 1000);
+            if (log) {log(`[Proxy] All in cooldown, next available in ${waitSec}s`);}
+            if (progressUpdate) {progressUpdate({ step: `⏳ Proxy cooldown ${waitSec}s` });}
+            await sleep(Math.min(earliestAvailable + 1000, 5000));
+        } else {
+            if (log) {log('[Proxy] All proxies in use, waiting...');}
+            if (progressUpdate) {progressUpdate({ step: '⏳ Antri proxy...' });}
+            await sleep(2000);
+        }
     }
 }
 
