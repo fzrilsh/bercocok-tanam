@@ -22,7 +22,11 @@ async function clickSelector(page, selector, options = {}) {
         await sleep(delayBeforeClick);
     }
 
-    await page.click(selector);
+    // Use JavaScript click for headless mode reliability
+    await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (el) el.click();
+    }, selector);
 }
 
 async function typeIntoSelector(page, selector, value, options = {}) {
@@ -53,7 +57,12 @@ async function clickFirstVisibleSelector(page, selectors, timeout) {
     );
 
     await sleep(config.delays.beforeNextClick);
-    await page.click(foundSelector);
+
+    // Use JavaScript click for headless mode reliability
+    await page.evaluate((sel) => {
+        const el = document.querySelector(sel);
+        if (el) el.click();
+    }, foundSelector);
 }
 
 async function completeGoogleLogin(page, account, log) {
