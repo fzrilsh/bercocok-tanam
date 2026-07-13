@@ -1,6 +1,6 @@
 const path = require("path");
 const { getConfig } = require("./src/config");
-const { readAccounts, formatDuration, testAllProxies } = require("./src/utils");
+const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runProxyAutomation } = require("./src/proxy");
@@ -121,6 +121,7 @@ function getFailedAccounts(results) {
 function displayInfoPanel() {
     const config = getConfig();
     const accounts = readAccounts();
+    const proxies = readProxyPool();
 
     const rows = [
         ["Router URL", config.routerUrl],
@@ -131,6 +132,7 @@ function displayInfoPanel() {
             `${path.basename(config.accountFile)} (${accounts.length} accounts)`,
         ],
         ["Browser Count", String(config.browserCount)],
+        ["Proxy Pool", proxies.length > 0 ? `${proxies.length} proxies` : "not configured"],
     ];
 
     const labelWidth = 15;
@@ -235,8 +237,7 @@ async function main() {
                     { name: "3. 🔐 Proxy Automation", value: "proxy" },
                     { name: "4. 🚀 All-in-One Automation", value: "all" },
                     { name: "5. ⚙️  Settings", value: "settings" },
-                    { name: "6. 🔍 Test Proxies", value: "test-proxies" },
-                    { name: "7. 🚪 Exit", value: "exit" },
+                    { name: "6. 🚪 Exit", value: "exit" },
                 ],
             },
         ]);
@@ -305,11 +306,6 @@ async function main() {
                     }
                 }
                 await runAllInOne();
-                break;
-            }
-            case "test-proxies": {
-                await testAllProxies();
-                await waitForEnter();
                 break;
             }
             case "settings":
