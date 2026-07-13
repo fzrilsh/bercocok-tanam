@@ -230,10 +230,12 @@ async function processProxyAccount(
     let poolProxy = null;
     let proxy = account.proxy || null;
 
-    if (!proxy && config.proxyPoolFile) {
-        poolProxy = await acquireProxy(log, updateProgress);
-        proxy = poolProxy;
-    }
+    // Skip proxy pool for proxy automation - free datacenter proxies trigger Google CAPTCHA
+    // Use direct connection for registration, get clean proxies from successful signups
+    // if (!proxy && config.proxyPoolFile) {
+    //     poolProxy = await acquireProxy(log, updateProgress);
+    //     proxy = poolProxy;
+    // }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
     log(`Launching browser for ${account.email}`);
