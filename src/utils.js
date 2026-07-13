@@ -285,7 +285,19 @@ function readProxyPool() {
     const lines = readLines(config.proxyPoolFile);
     return lines
         .map(line => line.trim())
-        .filter(line => line && !line.startsWith("#"));
+        .filter(line => line && !line.startsWith("#"))
+        .map(line => {
+            // Convert host:port:user:pass to http://user:pass@host:port
+            const parts = line.split(':');
+            if (parts.length >= 4 && !line.includes('://')) {
+                const host = parts[0];
+                const port = parts[1];
+                const user = parts[2];
+                const pass = parts.slice(3).join(':'); // Handle pass with colons
+                return `http://${user}:${pass}@${host}:${port}`;
+            }
+            return line; // Already in URL format
+        });
 }
 
 async function acquireProxy(log, progressUpdate) {

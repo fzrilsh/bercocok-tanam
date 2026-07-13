@@ -437,11 +437,18 @@ async function runProxyAutomation(sharedProgress = null) {
         progress.addWorker(`proxy-${i}`, chunk.length, `Proxy W${i + 1}`);
     });
 
-    const results = await Promise.all(
-        chunks.map((chunk, i) => {
-            const browserArgsIndex = i % config.browserArgsSets.length;
+    // Stagger worker starts to avoid rate limiting on registration endpoint
+    const workerPromises = [];
+    for (let i = 0; i < chunks.length; i++) {
+        const chunk = chunks[i];
+        const browserArgsIndex = i % config.browserArgsSets.length;
 
-            return runProxyWorker(
+        if (i > 0) {
+            await sleep(3000); // 3s stagger between workers
+        }
+
+        workerPromises.push(
+            runProxyWorker(
                 chunk,
                 `proxy-${i}`,
                 browserArgsIndex,
@@ -449,9 +456,11 @@ async function runProxyAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
-            );
-        }),
-    );
+            )
+        );
+    }
+
+    const results = await Promise.all(workerPromises);
 
     if (!sharedProgress) {
         progress.stop();

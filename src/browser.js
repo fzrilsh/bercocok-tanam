@@ -49,12 +49,20 @@ function parseProxyForPuppeteer(proxy) {
 async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
     const config = getConfig();
     const extraArgs = ["--start-maximized"];
+    let proxyAuth = null;
 
     if (proxy) {
         const parsed = parseProxyForPuppeteer(proxy);
 
         if (parsed) {
             extraArgs.push(`--proxy-server=${parsed.server}`);
+
+            if (parsed.username && parsed.password) {
+                proxyAuth = {
+                    username: parsed.username,
+                    password: parsed.password
+                };
+            }
         }
     }
 
@@ -78,6 +86,11 @@ async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
     };
 
     const [page] = await browser.pages();
+
+    if (proxyAuth) {
+        await page.authenticate(proxyAuth);
+    }
+
     await page.setUserAgent(randomUA());
 
     return { browser, page };
