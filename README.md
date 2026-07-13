@@ -17,7 +17,7 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
 
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
 - ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation
-- 🔐 **Proxy Automation** - Webshare.io proxy harvesting with Google OAuth
+- 🔐 **Proxy Automation** - Webshare.io proxy harvesting with Google OAuth (runs without proxy pool to avoid CAPTCHA)
 - 🚀 **All-in-One Mode** - Run both Kiro and Cloudflare automations in parallel
 - 🌐 **Proxy Pool System** - Shared proxy pool with automatic worker assignment and locking
 - 👷 **Multi-Worker Parallel Processing** - Configure multiple browser instances for faster processing
@@ -126,12 +126,16 @@ Instead of specifying proxies per account, you can use a shared proxy pool. Crea
 ```
 
 **Format:** `ip:port:username:password` (one proxy per line)
+- System automatically converts to `http://user:pass@host:port` format
 
 **How it works:**
 - Workers automatically pick available proxies from the pool
 - Proxies are locked while in use (other workers wait)
+- **30-minute cooldown per proxy IP** after use (prevents Google CAPTCHA from rapid reuse)
 - Proxy is released after browser closes
 - **Priority:** Account proxy > Pool proxy > No proxy
+
+**Important:** Proxy automation (webshare.io) runs **WITHOUT** proxy pool to avoid CAPTCHA challenges. Free datacenter proxies trigger Google's anti-fraud detection. Proxy pool is used only for Kiro and Cloudflare automations.
 
 Enable by setting `PROXY_POOL_FILE=proxy_keys.txt` in `.env`
 
@@ -288,9 +292,12 @@ bercocok-tanam/
 - Try without proxy first to isolate issue
 
 ### CAPTCHA challenges
+- **Proxy Automation**: Specifically designed to run WITHOUT proxies to avoid Google CAPTCHA
+- **Kiro/Cloudflare**: Proxy pool includes 30-minute cooldown per IP to prevent CAPTCHA
 - Reduce `BROWSER_COUNT` (fewer parallel instances)
 - Increase delays between actions
 - Ensure browser profile is clean (no previous bot flags)
+- Free datacenter proxies are more likely to trigger CAPTCHAs than residential proxies
 
 ## 📄 License
 
