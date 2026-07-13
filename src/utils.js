@@ -249,6 +249,10 @@ const activeAccounts = new Set();
 const activeProxies = new Set();
 const proxyLastUsed = new Map(); // IP:port -> last used timestamp
 const PROXY_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown
+const ACCOUNT_LOCK_POLL_MS = 2000; // Check every 2 seconds if account lock is released
+const PROXY_POOL_POLL_MS = 2000; // Check every 2 seconds if proxy becomes available
+const PROXY_WAIT_BUFFER_MS = 1000; // Extra buffer when waiting for proxy cooldown
+const PROXY_WAIT_MAX_MS = 5000; // Maximum wait time per iteration when proxies cooling down
 
 async function acquireAccountLock(email, log, progressUpdate) {
     if (activeAccounts.has(email)) {
@@ -261,7 +265,7 @@ async function acquireAccountLock(email, log, progressUpdate) {
         }
 
         while (activeAccounts.has(email)) {
-            await sleep(2000);
+            await sleep(ACCOUNT_LOCK_POLL_MS);
         }
     }
 
@@ -348,11 +352,11 @@ async function acquireProxy(log, progressUpdate) {
             const waitSec = Math.ceil(earliestAvailable / 1000);
             if (log) {log(`[Proxy] All in cooldown, next available in ${waitSec}s`);}
             if (progressUpdate) {progressUpdate({ step: `⏳ Proxy cooldown ${waitSec}s` });}
-            await sleep(Math.min(earliestAvailable + 1000, 5000));
+            await sleep(Math.min(earliestAvailable + PROXY_WAIT_BUFFER_MS, PROXY_WAIT_MAX_MS));
         } else {
             if (log) {log('[Proxy] All proxies in use, waiting...');}
             if (progressUpdate) {progressUpdate({ step: '⏳ Antri proxy...' });}
-            await sleep(2000);
+            await sleep(PROXY_POOL_POLL_MS);
         }
     }
 }

@@ -25,6 +25,7 @@ const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
 
 const TARGET_URL = "https://app.kiro.dev/signin/";
+const QUEUE_RETRY_DELAY_MS = 500; // Wait before retrying locked account from queue
 
 async function openKiroSignIn(page, log) {
     const config = getConfig();
@@ -241,7 +242,7 @@ async function runKiroWorker(
                     `[${workerId}] ${account.email} is locked, moving to back of queue.`,
                 );
                 queue.push(queue.shift());
-                await sleep(500);
+                await sleep(QUEUE_RETRY_DELAY_MS);
                 continue;
             }
 

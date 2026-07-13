@@ -25,6 +25,7 @@ const { printReport } = require("./reporter");
 const fs = require("fs");
 
 const TARGET_URL = "https://dash.cloudflare.com/login";
+const QUEUE_RETRY_DELAY_MS = 500; // Wait before retrying locked account from queue
 const MODELS =
     '["@cf/zai-org/glm-5.2","@cf/deepseek-ai/deepseek-r1-distill-qwen-32b","@cf/meta/llama-3.3-70b-instruct-fp8-fast","@cf/qwen/qwen2.5-coder-32b-instruct","@cf/qwen/qwq-32b"]';
 
@@ -404,7 +405,7 @@ async function runCFWorker(
                     `[${workerId}] ${account.email} is locked, moving to back of queue.`,
                 );
                 queue.push(queue.shift());
-                await sleep(500);
+                await sleep(QUEUE_RETRY_DELAY_MS);
                 continue;
             }
 

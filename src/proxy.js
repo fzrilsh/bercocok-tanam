@@ -24,6 +24,7 @@ const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
 
 const TARGET_URL = "https://dashboard.webshare.io/register";
+const WORKER_STAGGER_MS = 10 * 1000; // 10 seconds between worker starts to avoid rate limiting
 const GOOGLE_SELECTORS = {
     emailInput: "#identifierId",
     emailNext: "#identifierNext",
@@ -446,7 +447,7 @@ async function runProxyAutomation(sharedProgress = null) {
         const browserArgsIndex = i % config.browserArgsSets.length;
 
         if (i > 0) {
-            await sleep(10000); // 10s stagger between workers
+            await sleep(WORKER_STAGGER_MS);
         }
 
         workerPromises.push(
