@@ -6,3 +6,4 @@ accounts.txt
 errorAccounts.txt
 package-lock.json
 .claude
+retryAccounts/

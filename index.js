@@ -38,7 +38,7 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
         console.log(`\nRetrying ${failedAccountsList.length} failed accounts...\n`);
 
         const tempAccountFile = require("path").join(
-            require("os").tmpdir(),
+            './retryAccounts',
             `retry-${Date.now()}.txt`
         );
 

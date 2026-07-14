@@ -278,6 +278,26 @@ bercocok-tanam/
 - Check Chrome is installed and executable
 - Try default Chrome path (remove custom setting)
 
+### "spawn /Applications/Google Chrome.app EACCE" (Mac)
+Permission error when launching Chrome. Common causes:
+- **Wrong path**: `/Applications/Google Chrome.app` is the app bundle, not the executable
+- **Solution**: Use correct executable path:
+  ```bash
+  CHROME_EXECUTABLE_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  ```
+- If using Chromium: `/Applications/Chromium.app/Contents/MacOS/Chromium`
+- If using Brave: `/Applications/Brave Browser.app/Contents/MacOS/Brave Browser`
+- **Alternative**: Leave `CHROME_EXECUTABLE_PATH` empty — Puppeteer auto-detects bundled Chromium
+- **Check permissions**: Ensure Chrome has execute permission:
+  ```bash
+  ls -l "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+  # Should show: -rwxr-xr-x (x = executable bit)
+  ```
+- **Security settings**: If downloaded manually, remove quarantine attribute:
+  ```bash
+  xattr -d com.apple.quarantine "/Applications/Google Chrome.app"
+  ```
+
 ### 9Router connection errors
 - Verify 9Router is running and accessible
 - Check `ROUTER_URL` in `.env` or settings
