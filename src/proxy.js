@@ -47,6 +47,11 @@ async function handlePostLogin(page, log) {
 
     try {
         log("Clicking Login/Allow/Continue...");
+
+        // Scroll to bottom to ensure button is in viewport for headless mode
+        // Puppeteer clicks fail silently on off-screen elements in headless
+        await page.keyboard.press('End');
+
         await clickFirstVisibleSelector(
             page,
             SHARED_SELECTORS.loginOptions,
