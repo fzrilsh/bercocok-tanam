@@ -9,7 +9,7 @@
 [![Code Style: ESLint](https://img.shields.io/badge/code_style-ESLint-5e5ce6.svg)](https://eslint.org/)
 [![Sponsor on Patreon](https://img.shields.io/badge/Patreon-Support%20Development-ff424d?logo=patreon&logoColor=white)](https://patreon.com/fazrilsh)
 
-Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, and webshare.io proxies using Puppeteer. Features multi-worker parallel processing, proxy pool management, detailed per-account reporting, and comprehensive error tracking.
+Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, Codebuddy AI OAuth tokens, and webshare.io proxies using Puppeteer. Features multi-worker parallel processing, proxy pool management, detailed per-account reporting, and comprehensive error tracking.
 
 ![All-in-One Automation Screenshot](assets/screenshot.png)
 
@@ -17,8 +17,9 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
 
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
 - ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation
+- 🤖 **Codebuddy Automation [BETA]** - Codebuddy AI OAuth token extraction (⚠️ requires residential proxies)
 - 🔐 **Proxy Automation** - Webshare.io proxy harvesting with Google OAuth (runs without proxy pool to avoid CAPTCHA)
-- 🚀 **All-in-One Mode** - Run both Kiro and Cloudflare automations in parallel
+- 🚀 **All-in-One Mode** - Run Kiro, Cloudflare, and Codebuddy automations in parallel
 - 🌐 **Proxy Pool System** - Shared proxy pool with automatic worker assignment and locking
 - 👷 **Multi-Worker Parallel Processing** - Configure multiple browser instances for faster processing
 - 📊 **Detailed Reporting** - Per-worker and per-account statistics with timing breakdown
@@ -135,7 +136,10 @@ Instead of specifying proxies per account, you can use a shared proxy pool. Crea
 - Proxy is released after browser closes
 - **Priority:** Account proxy > Pool proxy > No proxy
 
-**Important:** Proxy automation (webshare.io) runs **WITHOUT** proxy pool to avoid CAPTCHA challenges. Free datacenter proxies trigger Google's anti-fraud detection. Proxy pool is used only for Kiro and Cloudflare automations.
+**Important:** 
+- Proxy automation (webshare.io) runs **WITHOUT** proxy pool to avoid CAPTCHA challenges. Free datacenter proxies trigger Google's anti-fraud detection.
+- **⚠️ Codebuddy Automation:** Requires **residential proxies only**. Datacenter proxies will result in "Account Access Restricted" errors due to Tencent Cloud's security policies. If you don't have residential proxies, Codebuddy automation will likely fail.
+- Proxy pool is used for Kiro, Cloudflare, and Codebuddy automations.
 
 Enable by setting `PROXY_POOL_FILE=proxy_keys.txt` in `.env`
 
@@ -148,10 +152,11 @@ npm start
 # Choose from menu:
 # 1. 🔑 Kiro Automation
 # 2. ☁️  Cloudflare Automation
-# 3. 🔐 Proxy Automation
-# 4. 🚀 All-in-One Automation
-# 5. ⚙️  Settings
-# 6. 🚪 Exit
+# 3. 🤖 Codebuddy Automation [BETA] (⚠️ Requires Residential Proxy)
+# 4. 🔐 Proxy Automation
+# 5. 🚀 All-in-One Automation
+# 6. ⚙️  Settings
+# 7. 🚪 Exit
 ```
 
 ### Account Change Confirmation
@@ -211,6 +216,7 @@ After each automation run, you'll see a detailed report:
 - **`{provider}_keys.txt`** - Token output files, generated per automation:
   - `kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
   - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
+  - `codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router, no local save)
   - `proxy_keys.txt` — Webshare.io proxies (format: `ip:port:username:password`)
 - **`errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
 - **`logs/`** - Detailed execution logs with timestamps
@@ -230,11 +236,12 @@ bercocok-tanam/
 ├── src/
 │   ├── browser.js        # Browser launching with stealth mode
 │   ├── cloudflare.js     # Cloudflare token harvesting logic
+│   ├── codebuddy.js      # Codebuddy OAuth token harvesting logic
 │   ├── config.js         # Configuration management
 │   ├── google-login.js   # Google authentication helpers
 │   ├── kiro.js           # Kiro token harvesting logic
-│   ├── proxy.js          # Webshare.io proxy harvesting logic
 │   ├── progress.js       # Progress bar and status display
+│   ├── proxy.js          # Webshare.io proxy harvesting logic
 │   ├── reporter.js       # Report generation and formatting
 │   ├── settings.js       # Interactive settings menu
 │   └── utils.js          # Utility functions and helpers
@@ -243,6 +250,7 @@ bercocok-tanam/
 ├── accounts.txt          # Account list (user-created)
 ├── kiro_keys.txt         # Kiro tokens output (auto-generated)
 ├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
+├── codebuddy_keys.txt    # Codebuddy tokens output (not saved, auto-imported)
 ├── proxy_keys.txt        # Proxy list output (auto-generated)
 ├── errorAccounts.txt     # Failed accounts log
 ├── logs/                 # Execution logs
@@ -311,9 +319,9 @@ Permission error when launching Chrome. Common causes:
 - Test proxy connection separately
 - Try without proxy first to isolate issue
 
-### CAPTCHA challenges
-- **Proxy Automation**: Specifically designed to run WITHOUT proxies to avoid Google CAPTCHA
+### CAPTCHA challenges and security restrictions
 - **Kiro/Cloudflare**: Proxy pool includes 30-minute cooldown per IP to prevent CAPTCHA
+- **Codebuddy**: Requires **residential proxies only**. Datacenter proxies will trigger "Account Access Restricted" errors from Tencent Cloud's security system. This is not a CAPTCHA but an account-level restriction that cannot be bypassed without residential IPs.
 - Reduce `BROWSER_COUNT` (fewer parallel instances)
 - Increase delays between actions
 - Ensure browser profile is clean (no previous bot flags)
