@@ -9,7 +9,7 @@
 [![Code Style: ESLint](https://img.shields.io/badge/code_style-ESLint-5e5ce6.svg)](https://eslint.org/)
 [![Sponsor on Patreon](https://img.shields.io/badge/Patreon-Support%20Development-ff424d?logo=patreon&logoColor=white)](https://patreon.com/fazrilsh)
 
-Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, Codebuddy AI OAuth tokens, and webshare.io proxies using Puppeteer. Features multi-worker parallel processing, proxy pool management, detailed per-account reporting, and comprehensive error tracking.
+Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, and Codebuddy AI OAuth tokens using Puppeteer. Features multi-worker parallel processing, proxy pool management, detailed per-account reporting, and comprehensive error tracking.
 
 ![All-in-One Automation Screenshot](assets/screenshot.png)
 
@@ -18,7 +18,6 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
 - ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation
 - 🤖 **Codebuddy Automation [BETA]** - Codebuddy AI OAuth token extraction (⚠️ requires residential proxies)
-- 🔐 **Proxy Automation** - Webshare.io proxy harvesting with Google OAuth (runs without proxy pool to avoid CAPTCHA)
 - 🚀 **All-in-One Mode** - Run Kiro, Cloudflare, and Codebuddy automations in parallel
 - 🌐 **Proxy Pool System** - Shared proxy pool with automatic worker assignment and locking
 - 👷 **Multi-Worker Parallel Processing** - Configure multiple browser instances for faster processing
@@ -137,7 +136,6 @@ Instead of specifying proxies per account, you can use a shared proxy pool. Crea
 - **Priority:** Account proxy > Pool proxy > No proxy
 
 **Important:** 
-- Proxy automation (webshare.io) runs **WITHOUT** proxy pool to avoid CAPTCHA challenges. Free datacenter proxies trigger Google's anti-fraud detection.
 - **⚠️ Codebuddy Automation:** Requires **residential proxies only**. Datacenter proxies will result in "Account Access Restricted" errors due to Tencent Cloud's security policies. If you don't have residential proxies, Codebuddy automation will likely fail.
 - Proxy pool is used for Kiro, Cloudflare, and Codebuddy automations.
 
@@ -153,10 +151,9 @@ npm start
 # 1. 🔑 Kiro Automation
 # 2. ☁️  Cloudflare Automation
 # 3. 🤖 Codebuddy Automation [BETA] (⚠️ Requires Residential Proxy)
-# 4. 🔐 Proxy Automation
-# 5. 🚀 All-in-One Automation
-# 6. ⚙️  Settings
-# 7. 🚪 Exit
+# 4. 🚀 All-in-One Automation
+# 5. ⚙️  Settings
+# 6. 🚪 Exit
 ```
 
 ### Account Change Confirmation
@@ -217,7 +214,6 @@ After each automation run, you'll see a detailed report:
   - `kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
   - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
   - `codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router, no local save)
-  - `proxy_keys.txt` — Webshare.io proxies (format: `ip:port:username:password`)
 - **`errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
 - **`logs/`** - Detailed execution logs with timestamps
 
@@ -241,7 +237,6 @@ bercocok-tanam/
 │   ├── google-login.js   # Google authentication helpers
 │   ├── kiro.js           # Kiro token harvesting logic
 │   ├── progress.js       # Progress bar and status display
-│   ├── proxy.js          # Webshare.io proxy harvesting logic
 │   ├── reporter.js       # Report generation and formatting
 │   ├── settings.js       # Interactive settings menu
 │   └── utils.js          # Utility functions and helpers
@@ -251,7 +246,6 @@ bercocok-tanam/
 ├── kiro_keys.txt         # Kiro tokens output (auto-generated)
 ├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
 ├── codebuddy_keys.txt    # Codebuddy tokens output (not saved, auto-imported)
-├── proxy_keys.txt        # Proxy list output (auto-generated)
 ├── errorAccounts.txt     # Failed accounts log
 ├── logs/                 # Execution logs
 ├── .env                  # Configuration (user-created)
