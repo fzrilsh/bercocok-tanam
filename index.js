@@ -3,6 +3,7 @@ const { getConfig } = require("./src/config");
 const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
+const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runProxyAutomation } = require("./src/proxy");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
@@ -64,6 +65,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runKiroAutomation();
         } else if (automationType === "cloudflare") {
             result = await runCloudflareAutomation();
+        } else if (automationType === "codebuddy") {
+            result = await runCodebuddyAutomation();
         } else if (automationType === "proxy") {
             result = await runProxyAutomation();
         }
@@ -172,16 +175,19 @@ async function runAllInOne() {
 
     console.log("");
     console.log("🌱 Starting All-in-One Automation...");
-    console.log("   Kiro and Cloudflare will run in parallel.");
+    console.log("   Kiro, Cloudflare, and Codebuddy will run in parallel.");
     console.log("   Each will use its own set of browsers.");
+    console.log("");
+    console.log("⚠️  NOTE: Codebuddy (BETA) requires residential proxies to avoid account restrictions.");
     console.log("");
 
     const startedAt = Date.now();
     const sharedProgress = createProgressManager("🚀 All-in-One Automation");
 
-    const [kiroResult, cfResult] = await Promise.all([
+    const [kiroResult, cfResult, codebuddyResult] = await Promise.all([
         runKiroAutomation(sharedProgress),
         runCloudflareAutomation(sharedProgress),
+        runCodebuddyAutomation(sharedProgress),
     ]);
 
     sharedProgress.stop();
@@ -198,8 +204,12 @@ async function runAllInOne() {
         ? `CF: ${cfResult.successCount} success, ${cfResult.failedCount} failed`
         : "CF: no accounts";
 
+    const codebuddyStr = codebuddyResult
+        ? `Codebuddy: ${codebuddyResult.successCount} success, ${codebuddyResult.failedCount} failed`
+        : "Codebuddy: no accounts";
+
     console.log(
-        `✅ All-in-One Complete! ${kiroStr} │ ${cfStr} │ Duration: ${duration}`,
+        `✅ All-in-One Complete! ${kiroStr} │ ${cfStr} │ ${codebuddyStr} │ Duration: ${duration}`,
     );
     console.log("");
 
@@ -214,6 +224,13 @@ async function runAllInOne() {
         const failedCF = getFailedAccounts(cfResult.results);
         if (failedCF.length > 0) {
             await retryFailedAccounts(failedCF, "cloudflare");
+        }
+    }
+
+    if (codebuddyResult && codebuddyResult.failedCount > 0) {
+        const failedCodebuddy = getFailedAccounts(codebuddyResult.results);
+        if (failedCodebuddy.length > 0) {
+            await retryFailedAccounts(failedCodebuddy, "codebuddy");
         }
     }
 
@@ -240,10 +257,11 @@ async function main() {
                 choices: [
                     { name: "1. 🔑 Kiro Automation", value: "kiro" },
                     { name: "2. ☁️  Cloudflare Automation", value: "cloudflare" },
-                    { name: "3. 🔐 Proxy Automation", value: "proxy" },
-                    { name: "4. 🚀 All-in-One Automation", value: "all" },
-                    { name: "5. ⚙️  Settings", value: "settings" },
-                    { name: "6. 🚪 Exit", value: "exit" },
+                    { name: "3. 🤖 Codebuddy Automation [BETA] (⚠️  Requires Residential Proxy)", value: "codebuddy" },
+                    { name: "4. 🔐 Proxy Automation", value: "proxy" },
+                    { name: "5. 🚀 All-in-One Automation", value: "all" },
+                    { name: "6. ⚙️  Settings", value: "settings" },
+                    { name: "7. 🚪 Exit", value: "exit" },
                 ],
             },
         ]);
@@ -280,6 +298,24 @@ async function main() {
                     const failedAccounts = getFailedAccounts(cfResult.results);
                     if (failedAccounts.length > 0) {
                         await retryFailedAccounts(failedAccounts, "cloudflare");
+                    }
+                }
+                await waitForEnter();
+                break;
+            }
+            case "codebuddy": {
+                const currentAccounts = readAccounts();
+                if (currentAccounts.length !== initialCount) {
+                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
+                    if (!shouldContinue) {
+                        continue;
+                    }
+                }
+                const codebuddyResult = await runCodebuddyAutomation();
+                if (codebuddyResult && codebuddyResult.failedCount > 0) {
+                    const failedAccounts = getFailedAccounts(codebuddyResult.results);
+                    if (failedAccounts.length > 0) {
+                        await retryFailedAccounts(failedAccounts, "codebuddy");
                     }
                 }
                 await waitForEnter();
