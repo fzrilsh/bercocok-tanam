@@ -4,7 +4,6 @@ const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
-const { runProxyAutomation } = require("./src/proxy");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
 const retryDir = './retryAccounts';
@@ -67,8 +66,6 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runCloudflareAutomation();
         } else if (automationType === "codebuddy") {
             result = await runCodebuddyAutomation();
-        } else if (automationType === "proxy") {
-            result = await runProxyAutomation();
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -258,10 +255,9 @@ async function main() {
                     { name: "1. 🔑 Kiro Automation", value: "kiro" },
                     { name: "2. ☁️  Cloudflare Automation", value: "cloudflare" },
                     { name: "3. 🤖 Codebuddy Automation [BETA] (⚠️  Requires Residential Proxy)", value: "codebuddy" },
-                    { name: "4. 🔐 Proxy Automation", value: "proxy" },
-                    { name: "5. 🚀 All-in-One Automation", value: "all" },
-                    { name: "6. ⚙️  Settings", value: "settings" },
-                    { name: "7. 🚪 Exit", value: "exit" },
+                    { name: "4. 🚀 All-in-One Automation", value: "all" },
+                    { name: "5. ⚙️  Settings", value: "settings" },
+                    { name: "6. 🚪 Exit", value: "exit" },
                 ],
             },
         ]);
@@ -316,24 +312,6 @@ async function main() {
                     const failedAccounts = getFailedAccounts(codebuddyResult.results);
                     if (failedAccounts.length > 0) {
                         await retryFailedAccounts(failedAccounts, "codebuddy");
-                    }
-                }
-                await waitForEnter();
-                break;
-            }
-            case "proxy": {
-                const currentAccounts = readAccounts();
-                if (currentAccounts.length !== initialCount) {
-                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
-                    if (!shouldContinue) {
-                        continue;
-                    }
-                }
-                const proxyResult = await runProxyAutomation();
-                if (proxyResult && proxyResult.failedCount > 0) {
-                    const failedAccounts = getFailedAccounts(proxyResult.results);
-                    if (failedAccounts.length > 0) {
-                        await retryFailedAccounts(failedAccounts, "proxy");
                     }
                 }
                 await waitForEnter();
