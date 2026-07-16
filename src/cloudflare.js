@@ -366,7 +366,11 @@ async function processCFAccount(
         }
 
         updateProgress({ step: STEPS.IMPORTING_CF });
-        await importToRouter(token, accountId, log);
+        try {
+            await importToRouter(token, accountId, log);
+        } catch (importErr) {
+            log(`Router import failed (continuing): ${importErr.message}`);
+        }
 
         removeAccount(account.rawLine);
         log(`Account harvest + import successful! Removed: ${account.email}`);

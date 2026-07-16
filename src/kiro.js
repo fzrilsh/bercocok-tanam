@@ -196,7 +196,11 @@ async function processKiroAccount(
         saveRefreshToken(account.email, refreshToken, log);
 
         updateProgress({ step: STEPS.IMPORTING });
-        await importRefreshToken(refreshToken, log);
+        try {
+            await importRefreshToken(refreshToken, log);
+        } catch (importErr) {
+            log(`Router import failed (continuing): ${importErr.message}`);
+        }
 
         removeAccount(account.rawLine);
         log(
