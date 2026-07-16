@@ -112,6 +112,10 @@ function formatDuration(milliseconds) {
 
 function ensureFileExists(filePath) {
     if (!fs.existsSync(filePath)) {
+        const dir = path.dirname(filePath);
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
         fs.writeFileSync(filePath, "");
     }
 }
@@ -125,6 +129,10 @@ function readLines(filePath) {
 }
 
 function writeLines(filePath, lines) {
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+    }
     fs.writeFileSync(filePath, lines.join("\n"));
 }
 

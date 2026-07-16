@@ -5,6 +5,8 @@ const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runProxyAutomation } = require("./src/proxy");
 const { openSettings } = require("./src/settings");
+const fs = require("fs");
+const retryDir = './retryAccounts';
 
 async function waitForEnter() {
     const inquirer = (await import("inquirer")).default;
@@ -36,13 +38,17 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
         }
 
         console.log(`\nRetrying ${failedAccountsList.length} failed accounts...\n`);
+        
+        // Ensure the directory exists
+        if (!fs.existsSync(retryDir)) {
+            fs.mkdirSync(retryDir, { recursive: true });
+        }
 
         const tempAccountFile = require("path").join(
-            './retryAccounts',
+            retryDir,
             `retry-${Date.now()}.txt`
         );
 
-        const fs = require("fs");
         fs.writeFileSync(
             tempAccountFile,
             failedAccountsList.map((a) => a.rawLine).join("\n")
