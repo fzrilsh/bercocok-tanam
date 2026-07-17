@@ -4,6 +4,7 @@ const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
+const { runTokenGoAutomation } = require("./src/tokengo");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
 const retryDir = './retryAccounts';
@@ -66,6 +67,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runCloudflareAutomation();
         } else if (automationType === "codebuddy") {
             result = await runCodebuddyAutomation();
+        } else if (automationType === "tokengo") {
+            result = await runTokenGoAutomation();
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -172,19 +175,21 @@ async function runAllInOne() {
 
     console.log("");
     console.log("🌱 Starting All-in-One Automation...");
-    console.log("   Kiro, Cloudflare, and Codebuddy will run in parallel.");
+    console.log("   Kiro, Cloudflare, Codebuddy, and TokenGo will run in parallel.");
     console.log("   Each will use its own set of browsers.");
     console.log("");
     console.log("⚠️  NOTE: Codebuddy (BETA) requires residential proxies to avoid account restrictions.");
+    console.log("⚠️  NOTE: TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy.");
     console.log("");
 
     const startedAt = Date.now();
     const sharedProgress = createProgressManager("🚀 All-in-One Automation");
 
-    const [kiroResult, cfResult, codebuddyResult] = await Promise.all([
+    const [kiroResult, cfResult, codebuddyResult, tokengoResult] = await Promise.all([
         runKiroAutomation(sharedProgress),
         runCloudflareAutomation(sharedProgress),
         runCodebuddyAutomation(sharedProgress),
+        runTokenGoAutomation(sharedProgress),
     ]);
 
     sharedProgress.stop();
@@ -205,8 +210,12 @@ async function runAllInOne() {
         ? `Codebuddy: ${codebuddyResult.successCount} success, ${codebuddyResult.failedCount} failed`
         : "Codebuddy: no accounts";
 
+    const tokengoStr = tokengoResult
+        ? `TokenGo: ${tokengoResult.successCount} success, ${tokengoResult.failedCount} failed`
+        : "TokenGo: no accounts";
+
     console.log(
-        `✅ All-in-One Complete! ${kiroStr} │ ${cfStr} │ ${codebuddyStr} │ Duration: ${duration}`,
+        `✅ All-in-One Complete! ${kiroStr} │ ${cfStr} │ ${codebuddyStr} │ ${tokengoStr} │ Duration: ${duration}`,
     );
     console.log("");
 
@@ -228,6 +237,13 @@ async function runAllInOne() {
         const failedCodebuddy = getFailedAccounts(codebuddyResult.results);
         if (failedCodebuddy.length > 0) {
             await retryFailedAccounts(failedCodebuddy, "codebuddy");
+        }
+    }
+
+    if (tokengoResult && tokengoResult.failedCount > 0) {
+        const failedTokengo = getFailedAccounts(tokengoResult.results);
+        if (failedTokengo.length > 0) {
+            await retryFailedAccounts(failedTokengo, "tokengo");
         }
     }
 
@@ -255,9 +271,10 @@ async function main() {
                     { name: "1. 🔑 Kiro Automation", value: "kiro" },
                     { name: "2. ☁️  Cloudflare Automation", value: "cloudflare" },
                     { name: "3. 🤖 Codebuddy Automation [BETA] (⚠️  Requires Residential Proxy)", value: "codebuddy" },
-                    { name: "4. 🚀 All-in-One Automation", value: "all" },
-                    { name: "5. ⚙️  Settings", value: "settings" },
-                    { name: "6. 🚪 Exit", value: "exit" },
+                    { name: "4. 🎫 TokenGo Automation (30-90s cooldown with proxy rotation)", value: "tokengo" },
+                    { name: "5. 🚀 All-in-One Automation", value: "all" },
+                    { name: "6. ⚙️  Settings", value: "settings" },
+                    { name: "7. 🚪 Exit", value: "exit" },
                 ],
             },
         ]);
@@ -312,6 +329,24 @@ async function main() {
                     const failedAccounts = getFailedAccounts(codebuddyResult.results);
                     if (failedAccounts.length > 0) {
                         await retryFailedAccounts(failedAccounts, "codebuddy");
+                    }
+                }
+                await waitForEnter();
+                break;
+            }
+            case "tokengo": {
+                const currentAccounts = readAccounts();
+                if (currentAccounts.length !== initialCount) {
+                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
+                    if (!shouldContinue) {
+                        continue;
+                    }
+                }
+                const tokengoResult = await runTokenGoAutomation();
+                if (tokengoResult && tokengoResult.failedCount > 0) {
+                    const failedAccounts = getFailedAccounts(tokengoResult.results);
+                    if (failedAccounts.length > 0) {
+                        await retryFailedAccounts(failedAccounts, "tokengo");
                     }
                 }
                 await waitForEnter();
