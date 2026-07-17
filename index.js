@@ -299,7 +299,7 @@ async function main() {
                     {
                         type: "checkbox",
                         name: "selected",
-                        message: "Select automations to run (use spacebar to select):",
+                        message: "Select automations to run (press Enter without selecting to go back):",
                         choices: [
                             { 
                                 name: "Kiro Automation", 
@@ -321,18 +321,14 @@ async function main() {
                                 checked: true
                             },
                         ],
-                        validate: (answer) => {
-                            if (answer.length < 1) {
-                                return "You must select at least one automation";
-                            }
-                            return true;
-                        },
+                        // No validation - allow empty selection to go back
                     },
                 ]);
 
                 if (selected.length > 0) {
                     await runSelectedAutomations(selected);
                 }
+                // If selection is empty, just continue loop (back to main menu)
                 break;
             }
             case "settings":
