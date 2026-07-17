@@ -42,6 +42,8 @@ async function openSettings() {
     let running = true;
 
     while (running) {
+        console.clear(); // Clear screen before showing settings
+        
         const config = getConfig();
         const accounts = readAccounts();
 
