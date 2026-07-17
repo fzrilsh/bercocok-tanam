@@ -1,4 +1,6 @@
 const path = require("path");
+const ora = require("ora");
+const colors = require("ansi-colors");
 const { getConfig } = require("./src/config");
 const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
@@ -170,80 +172,87 @@ function displayInfoPanel() {
     console.log("");
 }
 
-async function runAllInOne() {
+async function runSelectedAutomations(selectedAutomations) {
     const { createProgressManager } = require("./src/progress");
+    
+    const automationMap = {
+        kiro: { name: '🔑 Kiro', fn: runKiroAutomation },
+        cloudflare: { name: '☁️  Cloudflare', fn: runCloudflareAutomation },
+        codebuddy: { name: '🤖 Codebuddy', fn: runCodebuddyAutomation },
+        tokengo: { name: '🎫 TokenGo', fn: runTokenGoAutomation }
+    };
 
     console.log("");
-    console.log("🌱 Starting All-in-One Automation...");
-    console.log("   Kiro, Cloudflare, Codebuddy, and TokenGo will run in parallel.");
-    console.log("   Each will use its own set of browsers.");
-    console.log("");
-    console.log("⚠️  NOTE: Codebuddy (BETA) requires residential proxies to avoid account restrictions.");
-    console.log("⚠️  NOTE: TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy.");
+    const spinner = ora({
+        text: colors.cyan(`Starting ${selectedAutomations.length} automation${selectedAutomations.length > 1 ? 's' : ''}...`),
+        spinner: 'dots'
+    }).start();
+
+    // Show which automations are selected
+    await new Promise(resolve => setTimeout(resolve, 800));
+    spinner.text = colors.cyan(`Running: ${selectedAutomations.map(a => automationMap[a].name).join(', ')}`);
+    await new Promise(resolve => setTimeout(resolve, 800));
+
+    if (selectedAutomations.includes('codebuddy')) {
+        console.log("");
+        spinner.warn(colors.yellow("⚠️  Codebuddy (BETA) requires residential proxies to avoid account restrictions."));
+    }
+    
+    if (selectedAutomations.includes('tokengo')) {
+        console.log("");
+        spinner.warn(colors.yellow("⚠️  TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy."));
+    }
+
+    spinner.succeed(colors.green("Automations starting..."));
     console.log("");
 
     const startedAt = Date.now();
-    const sharedProgress = createProgressManager("🚀 All-in-One Automation");
+    const sharedProgress = createProgressManager(
+        selectedAutomations.length > 1 
+            ? "🚀 Running Multiple Automations" 
+            : `🚀 Running ${automationMap[selectedAutomations[0]].name}`
+    );
 
-    const [kiroResult, cfResult, codebuddyResult, tokengoResult] = await Promise.all([
-        runKiroAutomation(sharedProgress),
-        runCloudflareAutomation(sharedProgress),
-        runCodebuddyAutomation(sharedProgress),
-        runTokenGoAutomation(sharedProgress),
-    ]);
+    // Run selected automations in parallel
+    const promises = selectedAutomations.map(type => 
+        automationMap[type].fn(sharedProgress)
+    );
 
+    const results = await Promise.all(promises);
     sharedProgress.stop();
 
     const duration = formatDuration(Date.now() - startedAt);
 
-    console.log("═".repeat(60));
+    // Build results summary
+    const resultParts = [];
+    selectedAutomations.forEach((type, i) => {
+        const result = results[i];
+        if (result) {
+            resultParts.push(`${automationMap[type].name}: ${colors.green(`${result.successCount} ✓`)} ${colors.red(`${result.failedCount} ✗`)}`);
+        } else {
+            resultParts.push(`${automationMap[type].name}: no accounts`);
+        }
+    });
 
-    const kiroStr = kiroResult
-        ? `Kiro: ${kiroResult.successCount} success, ${kiroResult.failedCount} failed`
-        : "Kiro: no accounts";
-
-    const cfStr = cfResult
-        ? `CF: ${cfResult.successCount} success, ${cfResult.failedCount} failed`
-        : "CF: no accounts";
-
-    const codebuddyStr = codebuddyResult
-        ? `Codebuddy: ${codebuddyResult.successCount} success, ${codebuddyResult.failedCount} failed`
-        : "Codebuddy: no accounts";
-
-    const tokengoStr = tokengoResult
-        ? `TokenGo: ${tokengoResult.successCount} success, ${tokengoResult.failedCount} failed`
-        : "TokenGo: no accounts";
-
-    console.log(
-        `✅ All-in-One Complete! ${kiroStr} │ ${cfStr} │ ${codebuddyStr} │ ${tokengoStr} │ Duration: ${duration}`,
-    );
+    console.log("═".repeat(80));
+    console.log(colors.bold.green(`✅ Automation${selectedAutomations.length > 1 ? 's' : ''} Complete!`));
+    console.log("");
+    resultParts.forEach(part => console.log(`  ${part}`));
+    console.log("");
+    console.log(`  ${colors.dim(`Duration: ${duration}`)}`);
+    console.log("═".repeat(80));
     console.log("");
 
-    if (kiroResult && kiroResult.failedCount > 0) {
-        const failedKiro = getFailedAccounts(kiroResult.results);
-        if (failedKiro.length > 0) {
-            await retryFailedAccounts(failedKiro, "kiro");
-        }
-    }
-
-    if (cfResult && cfResult.failedCount > 0) {
-        const failedCF = getFailedAccounts(cfResult.results);
-        if (failedCF.length > 0) {
-            await retryFailedAccounts(failedCF, "cloudflare");
-        }
-    }
-
-    if (codebuddyResult && codebuddyResult.failedCount > 0) {
-        const failedCodebuddy = getFailedAccounts(codebuddyResult.results);
-        if (failedCodebuddy.length > 0) {
-            await retryFailedAccounts(failedCodebuddy, "codebuddy");
-        }
-    }
-
-    if (tokengoResult && tokengoResult.failedCount > 0) {
-        const failedTokengo = getFailedAccounts(tokengoResult.results);
-        if (failedTokengo.length > 0) {
-            await retryFailedAccounts(failedTokengo, "tokengo");
+    // Handle retries for each automation
+    for (let i = 0; i < selectedAutomations.length; i++) {
+        const type = selectedAutomations[i];
+        const result = results[i];
+        
+        if (result && result.failedCount > 0) {
+            const failedAccounts = getFailedAccounts(result.results);
+            if (failedAccounts.length > 0) {
+                await retryFailedAccounts(failedAccounts, type);
+            }
         }
     }
 
@@ -266,21 +275,17 @@ async function main() {
             {
                 type: "list",
                 name: "choice",
-                message: "Choose menu:",
+                message: "Choose action:",
                 choices: [
-                    { name: "1. 🔑 Kiro Automation", value: "kiro" },
-                    { name: "2. ☁️  Cloudflare Automation", value: "cloudflare" },
-                    { name: "3. 🤖 Codebuddy Automation [BETA] (⚠️  Requires Residential Proxy)", value: "codebuddy" },
-                    { name: "4. 🎫 TokenGo Automation (30-90s cooldown with proxy rotation)", value: "tokengo" },
-                    { name: "5. 🚀 All-in-One Automation", value: "all" },
-                    { name: "6. ⚙️  Settings", value: "settings" },
-                    { name: "7. 🚪 Exit", value: "exit" },
+                    { name: "🚀 Run Automations", value: "run" },
+                    { name: "⚙️  Settings", value: "settings" },
+                    { name: "🚪 Exit", value: "exit" },
                 ],
             },
         ]);
 
         switch (choice) {
-            case "kiro": {
+            case "run": {
                 const currentAccounts = readAccounts();
                 if (currentAccounts.length !== initialCount) {
                     const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
@@ -288,79 +293,46 @@ async function main() {
                         continue;
                     }
                 }
-                const kiroResult = await runKiroAutomation();
-                if (kiroResult && kiroResult.failedCount > 0) {
-                    const failedAccounts = getFailedAccounts(kiroResult.results);
-                    if (failedAccounts.length > 0) {
-                        await retryFailedAccounts(failedAccounts, "kiro");
-                    }
+
+                // Show checkbox for automation selection
+                const { selected } = await inquirer.prompt([
+                    {
+                        type: "checkbox",
+                        name: "selected",
+                        message: "Select automations to run (use spacebar to select):",
+                        choices: [
+                            { 
+                                name: "🔑 Kiro Automation", 
+                                value: "kiro",
+                                checked: true
+                            },
+                            { 
+                                name: "☁️  Cloudflare Automation", 
+                                value: "cloudflare",
+                                checked: true
+                            },
+                            { 
+                                name: "🤖 Codebuddy Automation [BETA] (⚠️  Requires Residential Proxy)", 
+                                value: "codebuddy"
+                            },
+                            { 
+                                name: "🎫 TokenGo Automation (30-90s cooldown with proxy rotation)", 
+                                value: "tokengo",
+                                checked: true
+                            },
+                        ],
+                        validate: (answer) => {
+                            if (answer.length < 1) {
+                                return "You must select at least one automation";
+                            }
+                            return true;
+                        },
+                    },
+                ]);
+
+                if (selected.length > 0) {
+                    await runSelectedAutomations(selected);
                 }
-                await waitForEnter();
-                break;
-            }
-            case "cloudflare": {
-                const currentAccounts = readAccounts();
-                if (currentAccounts.length !== initialCount) {
-                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
-                    if (!shouldContinue) {
-                        continue;
-                    }
-                }
-                const cfResult = await runCloudflareAutomation();
-                if (cfResult && cfResult.failedCount > 0) {
-                    const failedAccounts = getFailedAccounts(cfResult.results);
-                    if (failedAccounts.length > 0) {
-                        await retryFailedAccounts(failedAccounts, "cloudflare");
-                    }
-                }
-                await waitForEnter();
-                break;
-            }
-            case "codebuddy": {
-                const currentAccounts = readAccounts();
-                if (currentAccounts.length !== initialCount) {
-                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
-                    if (!shouldContinue) {
-                        continue;
-                    }
-                }
-                const codebuddyResult = await runCodebuddyAutomation();
-                if (codebuddyResult && codebuddyResult.failedCount > 0) {
-                    const failedAccounts = getFailedAccounts(codebuddyResult.results);
-                    if (failedAccounts.length > 0) {
-                        await retryFailedAccounts(failedAccounts, "codebuddy");
-                    }
-                }
-                await waitForEnter();
-                break;
-            }
-            case "tokengo": {
-                const currentAccounts = readAccounts();
-                if (currentAccounts.length !== initialCount) {
-                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
-                    if (!shouldContinue) {
-                        continue;
-                    }
-                }
-                const tokengoResult = await runTokenGoAutomation();
-                if (tokengoResult && tokengoResult.failedCount > 0) {
-                    const failedAccounts = getFailedAccounts(tokengoResult.results);
-                    if (failedAccounts.length > 0) {
-                        await retryFailedAccounts(failedAccounts, "tokengo");
-                    }
-                }
-                await waitForEnter();
-                break;
-            }
-            case "all": {
-                const currentAccounts = readAccounts();
-                if (currentAccounts.length !== initialCount) {
-                    const shouldContinue = await confirmAccountChanges(initialCount, currentAccounts.length);
-                    if (!shouldContinue) {
-                        continue;
-                    }
-                }
-                await runAllInOne();
                 break;
             }
             case "settings":
@@ -368,7 +340,7 @@ async function main() {
                 break;
             case "exit":
                 running = false;
-                console.log("👋 Bye!");
+                console.log(colors.cyan("👋 Bye!"));
                 break;
         }
     }
