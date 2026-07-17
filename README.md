@@ -9,7 +9,7 @@
 [![Code Style: ESLint](https://img.shields.io/badge/code_style-ESLint-5e5ce6.svg)](https://eslint.org/)
 [![Sponsor on Patreon](https://img.shields.io/badge/Patreon-Support%20Development-ff424d?logo=patreon&logoColor=white)](https://patreon.com/fazrilsh)
 
-Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, and Codebuddy AI OAuth tokens using Puppeteer. Features multi-worker parallel processing, proxy pool management, detailed per-account reporting, and comprehensive error tracking.
+Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API tokens, Codebuddy AI OAuth tokens, and TokenGo API keys using hybrid Puppeteer + HTTP automation. Features multi-worker parallel processing, intelligent proxy rotation, detailed per-account reporting, and comprehensive error tracking.
 
 ![All-in-One Automation Screenshot](assets/screenshot.png)
 
@@ -18,7 +18,12 @@ Automated CLI tool for harvesting Kiro refresh tokens, Cloudflare Workers AI API
 - 🔑 **Kiro Automation** - Automated Kiro OAuth refresh token extraction
 - ☁️ **Cloudflare Automation** - Cloudflare Workers AI API token generation
 - 🤖 **Codebuddy Automation [BETA]** - Codebuddy AI OAuth token extraction (⚠️ requires residential proxies)
-- 🚀 **All-in-One Mode** - Run Kiro, Cloudflare, and Codebuddy automations in parallel
+- 🎫 **TokenGo Automation** - TokenGo API key harvesting with intelligent proxy rotation
+  - Hybrid HTTP + Puppeteer approach (Google OAuth via Puppeteer, API calls via HTTP)
+  - Automatic proxy rotation on 429 rate limits (up to 5 proxies per account)
+  - Cookie persistence between phases to prevent state mismatch errors
+  - 30-90s cooldown with proxy rotation, 5-10min without proxy
+- 🚀 **All-in-One Mode** - Run Kiro, Cloudflare, Codebuddy, and TokenGo automations in parallel
 - 🌐 **Proxy Pool System** - Shared proxy pool with automatic worker assignment and locking
 - 👷 **Multi-Worker Parallel Processing** - Configure multiple browser instances for faster processing
 - 📊 **Detailed Reporting** - Per-worker and per-account statistics with timing breakdown
@@ -137,7 +142,8 @@ Instead of specifying proxies per account, you can use a shared proxy pool. Crea
 
 **Important:** 
 - **⚠️ Codebuddy Automation:** Requires **residential proxies only**. Datacenter proxies will result in "Account Access Restricted" errors due to Tencent Cloud's security policies. If you don't have residential proxies, Codebuddy automation will likely fail.
-- Proxy pool is used for Kiro, Cloudflare, and Codebuddy automations.
+- **🎫 TokenGo Automation:** Benefits greatly from proxy pool for 429 rate limit avoidance. Without proxy pool, accounts may encounter rate limits requiring 5-10 minute cooldowns between operations.
+- Proxy pool is used for Kiro, Cloudflare, Codebuddy, and TokenGo automations.
 
 Enable by setting `PROXY_POOL_FILE=proxy_keys.txt` in `.env`
 
@@ -151,9 +157,10 @@ npm start
 # 1. 🔑 Kiro Automation
 # 2. ☁️  Cloudflare Automation
 # 3. 🤖 Codebuddy Automation [BETA] (⚠️ Requires Residential Proxy)
-# 4. 🚀 All-in-One Automation
-# 5. ⚙️  Settings
-# 6. 🚪 Exit
+# 4. 🎫 TokenGo Automation (30-90s cooldown with proxy rotation)
+# 5. 🚀 All-in-One Automation
+# 6. ⚙️  Settings
+# 7. 🚪 Exit
 ```
 
 ### Account Change Confirmation
@@ -214,6 +221,7 @@ After each automation run, you'll see a detailed report:
   - `kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
   - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
   - `codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router, no local save)
+  - `tokengo_keys.txt` — TokenGo API keys (format: `email|userId|apiKey`, auto-imported to 9Router)
 - **`errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
 - **`logs/`** - Detailed execution logs with timestamps
 
@@ -236,6 +244,7 @@ bercocok-tanam/
 │   ├── config.js         # Configuration management
 │   ├── google-login.js   # Google authentication helpers
 │   ├── kiro.js           # Kiro token harvesting logic
+│   ├── tokengo.js        # TokenGo API key harvesting with proxy rotation
 │   ├── progress.js       # Progress bar and status display
 │   ├── reporter.js       # Report generation and formatting
 │   ├── settings.js       # Interactive settings menu
@@ -246,6 +255,7 @@ bercocok-tanam/
 ├── kiro_keys.txt         # Kiro tokens output (auto-generated)
 ├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
 ├── codebuddy_keys.txt    # Codebuddy tokens output (not saved, auto-imported)
+├── tokengo_keys.txt      # TokenGo API keys output (auto-generated, auto-imported)
 ├── errorAccounts.txt     # Failed accounts log
 ├── logs/                 # Execution logs
 ├── .env                  # Configuration (user-created)
@@ -258,6 +268,8 @@ bercocok-tanam/
 - **Node.js** - Runtime environment
 - **Puppeteer** - Browser automation
 - **Puppeteer-Stealth** - Anti-detection plugin
+- **Axios** - HTTP client for API calls with proxy support
+- **HTTPS-Proxy-Agent** - Proxy agent for HTTPS requests
 - **Inquirer** - Interactive CLI prompts
 - **CLI-Progress** - Progress bars
 - **ANSI-Colors** - Terminal colors
@@ -316,10 +328,21 @@ Permission error when launching Chrome. Common causes:
 ### CAPTCHA challenges and security restrictions
 - **Kiro/Cloudflare**: Proxy pool includes 30-minute cooldown per IP to prevent CAPTCHA
 - **Codebuddy**: Requires **residential proxies only**. Datacenter proxies will trigger "Account Access Restricted" errors from Tencent Cloud's security system. This is not a CAPTCHA but an account-level restriction that cannot be bypassed without residential IPs.
+- **TokenGo**: 429 rate limits are common. System automatically rotates proxies (up to 5 per account) when rate limited. Without proxy pool, cooldown increases from 30-90s to 5-10min per account.
 - Reduce `BROWSER_COUNT` (fewer parallel instances)
 - Increase delays between actions
 - Ensure browser profile is clean (no previous bot flags)
 - Free datacenter proxies are more likely to trigger CAPTCHAs than residential proxies
+
+### TokenGo 429 rate limits
+- **Symptom**: "Got HTTP 429, retry X/100 after 100ms..."
+- **Cause**: TokenGo API rate limits requests per IP address
+- **Automatic fix**: System rotates to new proxy after 100 failed attempts
+- **Manual fix**: 
+  - Add more proxies to proxy pool for better rotation
+  - Reduce `BROWSER_COUNT` to avoid parallel rate limit hits
+  - If no proxy pool: expect 5-10 minute cooldowns between accounts
+- **Best practice**: Use proxy pool with 5+ proxies for smooth operation
 
 ## 📄 License
 
