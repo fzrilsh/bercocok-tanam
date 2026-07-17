@@ -1,5 +1,41 @@
 const { getConfig, reloadConfig, updateEnvValue } = require("./config");
 const { readAccounts } = require("./utils");
+const path = require("path");
+
+function displaySettingsPanel(config, accounts) {
+    const rows = [
+        ["Router URL", config.routerUrl],
+        ["PW Headless", config.headless ? "true" : "false"],
+        ["Chrome Path", config.chromeExecutablePath],
+        ["Account File", `${path.basename(config.accountFile)} (${accounts.length} accounts)`],
+        ["Browser Count", String(config.browserCount)],
+    ];
+
+    const labelWidth = 15;
+    const maxValueLen = Math.max(...rows.map(([, v]) => v.length));
+    const innerWidth = labelWidth + 3 + maxValueLen;
+    const boxWidth = innerWidth + 4;
+
+    const title = "Settings";
+    const titleDisplayLen = title.length;
+    const titlePadLeft = Math.floor((boxWidth - 2 - titleDisplayLen) / 2);
+    const titlePadRight = boxWidth - titleDisplayLen - titlePadLeft - 2;
+
+    console.log("");
+    console.log(`╔${"═".repeat(boxWidth - 2)}╗`);
+    console.log(
+        `║${" ".repeat(titlePadLeft)}${title}${" ".repeat(titlePadRight)}║`,
+    );
+    console.log(`╠${"═".repeat(boxWidth - 2)}╣`);
+
+    for (const [label, value] of rows) {
+        const line = `${label.padEnd(labelWidth)}: ${value}`;
+        console.log(`║  ${line.padEnd(boxWidth - 4)}║`);
+    }
+
+    console.log(`╚${"═".repeat(boxWidth - 2)}╝`);
+    console.log("");
+}
 
 async function openSettings() {
     const inquirer = (await import("inquirer")).default;
@@ -9,20 +45,7 @@ async function openSettings() {
         const config = getConfig();
         const accounts = readAccounts();
 
-        console.log("");
-        console.log("⚙️  Settings");
-        console.log("─".repeat(50));
-        console.log(`  1. Router URL       : ${config.routerUrl}`);
-        console.log(
-            `  2. PW Headless      : ${config.headless ? "true (1)" : "false (0)"}`,
-        );
-        console.log(`  3. Chrome Executable: ${config.chromeExecutablePath}`);
-        console.log(
-            `  4. Account File     : ${config.accountFile} (${accounts.length} accounts)`,
-        );
-        console.log(`  5. Browser Count    : ${config.browserCount}`);
-        console.log("  6. ← Back");
-        console.log("─".repeat(50));
+        displaySettingsPanel(config, accounts);
 
         const { choice } = await inquirer.prompt([
             {
@@ -30,12 +53,12 @@ async function openSettings() {
                 name: "choice",
                 message: "Choose setting to modify:",
                 choices: [
-                    { name: "1. Router URL", value: "router_url" },
-                    { name: "2. PW Headless", value: "pw_headless" },
-                    { name: "3. Chrome Executable", value: "chrome_path" },
-                    { name: "4. Account File", value: "account_file" },
-                    { name: "5. Browser Count", value: "browser_count" },
-                    { name: "6. ← Back", value: "back" },
+                    { name: "Router URL", value: "router_url" },
+                    { name: "PW Headless", value: "pw_headless" },
+                    { name: "Chrome Executable", value: "chrome_path" },
+                    { name: "Account File", value: "account_file" },
+                    { name: "Browser Count", value: "browser_count" },
+                    { name: "← Back", value: "back" },
                 ],
             },
         ]);
@@ -66,7 +89,7 @@ async function openSettings() {
 
                 updateEnvValue("ROUTER_URL", value);
                 reloadConfig();
-                console.log("✅ Router URL updated!");
+                console.log("Router URL updated!");
                 break;
             }
 
@@ -86,7 +109,7 @@ async function openSettings() {
 
                 updateEnvValue("PW_HEADLESS", value);
                 reloadConfig();
-                console.log("✅ PW Headless updated!");
+                console.log("PW Headless updated!");
                 break;
             }
 
@@ -102,7 +125,7 @@ async function openSettings() {
 
                 updateEnvValue("CHROME_EXECUTABLE_PATH", value);
                 reloadConfig();
-                console.log("✅ Chrome path updated!");
+                console.log("Chrome path updated!");
                 break;
             }
 
@@ -118,7 +141,7 @@ async function openSettings() {
 
                 updateEnvValue("ACCOUNT_FILE", value);
                 reloadConfig();
-                console.log("✅ Account file updated!");
+                console.log("Account file updated!");
                 break;
             }
 
@@ -141,7 +164,7 @@ async function openSettings() {
 
                 updateEnvValue("BROWSER_COUNT", String(value));
                 reloadConfig();
-                console.log("✅ Browser count updated!");
+                console.log("Browser count updated!");
                 break;
             }
         }
