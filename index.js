@@ -151,7 +151,7 @@ function displayInfoPanel() {
     const innerWidth = labelWidth + 3 + maxValueLen;
     const boxWidth = innerWidth + 4;
 
-    const title = "Bercocok Tanam CLI";
+    const title = "🌱 Bercocok Tanam CLI 🌱";
     const titleDisplayLen = title.length;
     const titlePadLeft = Math.floor((boxWidth - 2 - titleDisplayLen) / 2);
     const titlePadRight = boxWidth - titleDisplayLen - titlePadLeft - 2;
@@ -176,10 +176,10 @@ async function runSelectedAutomations(selectedAutomations) {
     const { createProgressManager } = require("./src/progress");
     
     const automationMap = {
-        kiro: { name: '🔑 Kiro', fn: runKiroAutomation },
-        cloudflare: { name: '☁️ Cloudflare', fn: runCloudflareAutomation },
-        codebuddy: { name: '🤖 Codebuddy', fn: runCodebuddyAutomation },
-        tokengo: { name: '🎫 TokenGo', fn: runTokenGoAutomation }
+        kiro: { name: 'Kiro', fn: runKiroAutomation },
+        cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
+        codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
+        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation }
     };
 
     console.log("");
@@ -302,21 +302,21 @@ async function main() {
                         message: "Select automations to run (use spacebar to select):",
                         choices: [
                             { 
-                                name: "🔑 Kiro Automation", 
+                                name: "Kiro Automation", 
                                 value: "kiro",
                                 checked: true
                             },
                             { 
-                                name: "☁️  Cloudflare Automation", 
+                                name: "Cloudflare Automation", 
                                 value: "cloudflare",
                                 checked: true
                             },
                             { 
-                                name: "🤖 Codebuddy Automation [BETA] (⚠️  Requires Residential Proxy)", 
+                                name: "Codebuddy Automation [BETA] (Requires Residential Proxy)", 
                                 value: "codebuddy"
                             },
                             { 
-                                name: "🎫 TokenGo Automation (30-90s cooldown with proxy rotation)", 
+                                name: "TokenGo Automation (30-90s cooldown with proxy rotation)", 
                                 value: "tokengo",
                                 checked: true
                             },
