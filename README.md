@@ -1,6 +1,6 @@
 # 🌱 bercocok-tanam
 
-[![License: ISC](https://img.shields.io/badge/License-ISC-blue.svg)](https://opensource.org/licenses/ISC)
+[![License: CC BY-NC-SA 4.0](https://img.shields.io/badge/License-CC%20BY--NC--SA%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by-nc-sa/4.0/)
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D16-brightgreen)](https://nodejs.org/)
 [![GitHub Stars](https://img.shields.io/github/stars/fzrilsh/bercocok-tanam?style=social)](https://github.com/fzrilsh/bercocok-tanam/stargazers)
 [![GitHub Forks](https://img.shields.io/github/forks/fzrilsh/bercocok-tanam?style=social)](https://github.com/fzrilsh/bercocok-tanam/network/members)
@@ -346,7 +346,19 @@ Permission error when launching Chrome. Common causes:
 
 ## 📄 License
 
-ISC
+This project is licensed under the [Creative Commons Attribution-NonCommercial-ShareAlike 4.0 International License](https://creativecommons.org/licenses/by-nc-sa/4.0/).
+
+**You are free to:**
+- ✅ Share and modify the code
+- ✅ Fork and contribute
+- ✅ Use for personal/educational purposes
+
+**Under these conditions:**
+- 📝 **Attribution**: Give appropriate credit to the original author
+- 🚫 **NonCommercial**: Cannot be used for commercial purposes or sold
+- 🔄 **ShareAlike**: Derivatives must use the same license
+
+See [LICENSE](LICENSE) file for full legal terms.
 
 ## 👤 Author
 
