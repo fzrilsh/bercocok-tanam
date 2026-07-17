@@ -151,10 +151,10 @@ function displayInfoPanel() {
     const innerWidth = labelWidth + 3 + maxValueLen;
     const boxWidth = innerWidth + 4;
 
-    const title = "🌱 Bercocok Tanam CLI 🌱";
-    const titleDisplayLen = title.length + 2;
+    const title = "Bercocok Tanam CLI";
+    const titleDisplayLen = title.length;
     const titlePadLeft = Math.floor((boxWidth - 2 - titleDisplayLen) / 2);
-    const titlePadRight = boxWidth - titleDisplayLen - titlePadLeft;
+    const titlePadRight = boxWidth - titleDisplayLen - titlePadLeft - 2;
 
     console.log("");
     console.log(`╔${"═".repeat(boxWidth - 2)}╗`);
@@ -177,7 +177,7 @@ async function runSelectedAutomations(selectedAutomations) {
     
     const automationMap = {
         kiro: { name: '🔑 Kiro', fn: runKiroAutomation },
-        cloudflare: { name: '☁️  Cloudflare', fn: runCloudflareAutomation },
+        cloudflare: { name: '☁️ Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: '🤖 Codebuddy', fn: runCodebuddyAutomation },
         tokengo: { name: '🎫 TokenGo', fn: runTokenGoAutomation }
     };
@@ -195,12 +195,12 @@ async function runSelectedAutomations(selectedAutomations) {
 
     if (selectedAutomations.includes('codebuddy')) {
         console.log("");
-        spinner.warn(colors.yellow("⚠️  Codebuddy (BETA) requires residential proxies to avoid account restrictions."));
+        spinner.warn(colors.yellow("NOTE: Codebuddy (BETA) requires residential proxies to avoid account restrictions."));
     }
     
     if (selectedAutomations.includes('tokengo')) {
         console.log("");
-        spinner.warn(colors.yellow("⚠️  TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy."));
+        spinner.warn(colors.yellow("NOTE: TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy."));
     }
 
     spinner.succeed(colors.green("Automations starting..."));
@@ -209,8 +209,8 @@ async function runSelectedAutomations(selectedAutomations) {
     const startedAt = Date.now();
     const sharedProgress = createProgressManager(
         selectedAutomations.length > 1 
-            ? "🚀 Running Multiple Automations" 
-            : `🚀 Running ${automationMap[selectedAutomations[0]].name}`
+            ? "Running Multiple Automations" 
+            : `Running ${automationMap[selectedAutomations[0]].name}`
     );
 
     // Run selected automations in parallel
@@ -228,14 +228,14 @@ async function runSelectedAutomations(selectedAutomations) {
     selectedAutomations.forEach((type, i) => {
         const result = results[i];
         if (result) {
-            resultParts.push(`${automationMap[type].name}: ${colors.green(`${result.successCount} ✓`)} ${colors.red(`${result.failedCount} ✗`)}`);
+            resultParts.push(`${automationMap[type].name}: ${colors.green(`${result.successCount} success`)} ${colors.red(`${result.failedCount} failed`)}`);
         } else {
             resultParts.push(`${automationMap[type].name}: no accounts`);
         }
     });
 
     console.log("═".repeat(80));
-    console.log(colors.bold.green(`✅ Automation${selectedAutomations.length > 1 ? 's' : ''} Complete!`));
+    console.log(colors.bold.green(`Automation${selectedAutomations.length > 1 ? 's' : ''} Complete`));
     console.log("");
     resultParts.forEach(part => console.log(`  ${part}`));
     console.log("");
@@ -277,9 +277,9 @@ async function main() {
                 name: "choice",
                 message: "Choose action:",
                 choices: [
-                    { name: "🚀 Run Automations", value: "run" },
-                    { name: "⚙️  Settings", value: "settings" },
-                    { name: "🚪 Exit", value: "exit" },
+                    { name: "Run Automations", value: "run" },
+                    { name: "Settings", value: "settings" },
+                    { name: "Exit", value: "exit" },
                 ],
             },
         ]);
@@ -340,7 +340,7 @@ async function main() {
                 break;
             case "exit":
                 running = false;
-                console.log(colors.cyan("👋 Bye!"));
+                console.log(colors.cyan("Bye!"));
                 break;
         }
     }
