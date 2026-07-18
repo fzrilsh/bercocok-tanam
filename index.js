@@ -172,7 +172,7 @@ function displayInfoPanel() {
     console.log("");
 }
 
-async function runSelectedAutomations(selectedAutomations) {
+async function runSelectedAutomations(selectedAutomations, proxySettings) {
     const { createProgressManager } = require("./src/progress");
     
     const automationMap = {
@@ -215,7 +215,7 @@ async function runSelectedAutomations(selectedAutomations) {
 
     // Run selected automations in parallel
     const promises = selectedAutomations.map(type => 
-        automationMap[type].fn(sharedProgress)
+        automationMap[type].fn(sharedProgress, proxySettings[type])
     );
 
     const results = await Promise.all(promises);
@@ -294,7 +294,13 @@ async function main() {
                     }
                 }
 
-                // Show checkbox for automation selection
+                const automationMap = {
+                    kiro: { name: 'Kiro' },
+                    cloudflare: { name: 'Cloudflare' },
+                    codebuddy: { name: 'Codebuddy' },
+                    tokengo: { name: 'TokenGo' }
+                };
+
                 const { selected } = await inquirer.prompt([
                     {
                         type: "checkbox",
@@ -326,7 +332,44 @@ async function main() {
                 ]);
 
                 if (selected.length > 0) {
-                    await runSelectedAutomations(selected);
+                    const proxies = readProxyPool();
+                    let proxySettings = {};
+
+                    if (proxies.length > 0) {
+                        if (selected.length === 1) {
+                            const { useProxy } = await inquirer.prompt([
+                                {
+                                    type: "confirm",
+                                    name: "useProxy",
+                                    message: `Use proxy pool (${proxies.length} proxies available)?`,
+                                    default: true,
+                                },
+                            ]);
+                            proxySettings[selected[0]] = useProxy;
+                        } else {
+                            const { withProxy } = await inquirer.prompt([
+                                {
+                                    type: "checkbox",
+                                    name: "withProxy",
+                                    message: `Select which automations should use proxy pool (${proxies.length} proxies):`,
+                                    choices: selected.map(type => ({
+                                        name: automationMap[type].name,
+                                        value: type,
+                                        checked: true,
+                                    })),
+                                },
+                            ]);
+                            selected.forEach(type => {
+                                proxySettings[type] = withProxy.includes(type);
+                            });
+                        }
+                    } else {
+                        selected.forEach(type => {
+                            proxySettings[type] = false;
+                        });
+                    }
+
+                    await runSelectedAutomations(selected, proxySettings);
                 }
                 // If selection is empty, just continue loop (back to main menu)
                 break;

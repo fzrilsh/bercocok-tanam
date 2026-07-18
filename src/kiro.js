@@ -161,12 +161,13 @@ async function processKiroAccount(
     workerIndex,
     log,
     updateProgress,
+    useProxy = true,
 ) {
     const config = getConfig();
     let poolProxy = null;
     let proxy = account.proxy || null;
 
-    if (!proxy && config.proxyPoolFile) {
+    if (!proxy && config.proxyPoolFile && useProxy) {
         poolProxy = await acquireProxy(log, updateProgress);
         proxy = poolProxy;
     }
@@ -226,6 +227,7 @@ async function runKiroWorker(
     total,
     progress,
     log,
+    useProxy = true,
 ) {
     const config = getConfig();
 
@@ -281,6 +283,7 @@ async function runKiroWorker(
                 workerIndex,
                 log,
                 updateProgress,
+                useProxy,
             );
 
             accountSuccess = true;
@@ -350,7 +353,7 @@ async function runKiroWorker(
     };
 }
 
-async function runKiroAutomation(sharedProgress = null) {
+async function runKiroAutomation(sharedProgress = null, useProxy = true) {
     const config = getConfig();
     const logger = createFileLogger();
     const accounts = readAccounts();
@@ -387,6 +390,7 @@ async function runKiroAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
+                useProxy,
             );
         }),
     );
