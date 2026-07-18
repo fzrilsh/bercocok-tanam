@@ -7,6 +7,7 @@ const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
+const { runGrokCLIAutomation } = require("./src/grok-cli");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
 const retryDir = './retryAccounts';
@@ -71,6 +72,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runCodebuddyAutomation();
         } else if (automationType === "tokengo") {
             result = await runTokenGoAutomation();
+        } else if (automationType === "grok-cli") {
+            result = await runGrokCLIAutomation(failedAccountsList.length);
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -172,14 +175,15 @@ function displayInfoPanel() {
     console.log("");
 }
 
-async function runSelectedAutomations(selectedAutomations, proxySettings) {
+async function runSelectedAutomations(selectedAutomations, proxySettings, grokAccountCount = 1) {
     const { createProgressManager } = require("./src/progress");
     
     const automationMap = {
         kiro: { name: 'Kiro', fn: runKiroAutomation },
         cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
-        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation }
+        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
+        'grok-cli': { name: 'Grok CLI', fn: runGrokCLIAutomation }
     };
 
     console.log("");
@@ -202,6 +206,11 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
         console.log("");
         spinner.warn(colors.yellow("NOTE: TokenGo cooldown: 30-90s with proxy rotation, 5-10min without proxy."));
     }
+    
+    if (selectedAutomations.includes('grok-cli')) {
+        console.log("");
+        spinner.info(colors.cyan(`NOTE: Grok CLI will create ${grokAccountCount} account(s) with temporary emails.`));
+    }
 
     spinner.succeed(colors.green("Automations starting..."));
     console.log("");
@@ -214,9 +223,12 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
     );
 
     // Run selected automations in parallel
-    const promises = selectedAutomations.map(type => 
-        automationMap[type].fn(sharedProgress, proxySettings[type])
-    );
+    const promises = selectedAutomations.map(type => {
+        if (type === 'grok-cli') {
+            return automationMap[type].fn(grokAccountCount, sharedProgress, proxySettings[type]);
+        }
+        return automationMap[type].fn(sharedProgress, proxySettings[type]);
+    });
 
     const results = await Promise.all(promises);
     sharedProgress.stop();
@@ -298,7 +310,8 @@ async function main() {
                     kiro: { name: 'Kiro' },
                     cloudflare: { name: 'Cloudflare' },
                     codebuddy: { name: 'Codebuddy' },
-                    tokengo: { name: 'TokenGo' }
+                    tokengo: { name: 'TokenGo' },
+                    'grok-cli': { name: 'Grok CLI' }
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -326,12 +339,38 @@ async function main() {
                                 value: "tokengo",
                                 checked: true
                             },
+                            { 
+                                name: "Grok CLI Automation (Creates temp emails automatically)", 
+                                value: "grok-cli"
+                            },
                         ],
                         // No validation - allow empty selection to go back
                     },
                 ]);
 
                 if (selected.length > 0) {
+                    let grokAccountCount = 1;
+                    
+                    // If grok-cli is selected, ask for number of accounts
+                    if (selected.includes('grok-cli')) {
+                        const { accountCount } = await inquirer.prompt([
+                            {
+                                type: "input",
+                                name: "accountCount",
+                                message: "How many Grok CLI accounts to create?",
+                                default: "1",
+                                validate: (input) => {
+                                    const num = parseInt(input);
+                                    if (isNaN(num) || num <= 0) {
+                                        return "Please enter a positive number";
+                                    }
+                                    return true;
+                                },
+                            },
+                        ]);
+                        grokAccountCount = parseInt(accountCount);
+                    }
+                    
                     const proxies = readProxyPool();
                     let proxySettings = {};
 
@@ -369,7 +408,7 @@ async function main() {
                         });
                     }
 
-                    await runSelectedAutomations(selected, proxySettings);
+                    await runSelectedAutomations(selected, proxySettings, grokAccountCount);
                 }
                 // If selection is empty, just continue loop (back to main menu)
                 break;

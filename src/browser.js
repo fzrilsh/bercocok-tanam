@@ -46,7 +46,7 @@ function parseProxyForPuppeteer(proxy) {
     return result;
 }
 
-async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
+async function launchBrowser(browserArgsIndex, workerIndex, proxy, customArgs = null, persistentUserDataDir = null) {
     const config = getConfig();
     const extraArgs = ["--start-maximized"];
     let proxyAuth = null;
@@ -66,24 +66,30 @@ async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
         }
     }
 
-    const userDataDir = createUserDataDir();
+    // Use persistent userDataDir if provided, otherwise create temp
+    const userDataDir = persistentUserDataDir || createUserDataDir();
+    
+    // Use custom args if provided, otherwise use config's browser args sets
+    const browserArgs = customArgs || config.browserArgsSets[browserArgsIndex];
 
     const browser = await puppeteer.launch({
         headless: config.headless,
         slowMo: config.slowMo,
         executablePath: config.chromeExecutablePath,
         defaultViewport: null,
-        args: [...config.browserArgsSets[browserArgsIndex], ...extraArgs],
+        args: [...browserArgs, ...extraArgs],
         userDataDir,
         ignoreDefaultArgs: ["--enable-automation"],
     });
 
-    // Patch browser.close to auto-cleanup the userDataDir after closing
-    const originalClose = browser.close.bind(browser);
-    browser.close = async () => {
-        await originalClose();
-        cleanupUserDataDir(userDataDir);
-    };
+    // Only patch close() if using temp userDataDir (persistent should not be deleted)
+    if (!persistentUserDataDir) {
+        const originalClose = browser.close.bind(browser);
+        browser.close = async () => {
+            await originalClose();
+            cleanupUserDataDir(userDataDir);
+        };
+    }
 
     const [page] = await browser.pages();
 
@@ -92,6 +98,54 @@ async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
     }
 
     await page.setUserAgent(randomUA());
+
+    // Additional anti-detection measures for Cloudflare Turnstile
+    await page.evaluateOnNewDocument(() => {
+        // Remove webdriver property
+        Object.defineProperty(navigator, 'webdriver', {
+            get: () => undefined,
+        });
+
+        // Mock plugins
+        Object.defineProperty(navigator, 'plugins', {
+            get: () => [1, 2, 3, 4, 5],
+        });
+
+        // Mock languages
+        Object.defineProperty(navigator, 'languages', {
+            get: () => ['en-US', 'en'],
+        });
+
+        // Override permissions
+        const originalQuery = window.navigator.permissions.query;
+        window.navigator.permissions.query = (parameters) => (
+            parameters.name === 'notifications' ?
+                Promise.resolve({ state: Notification.permission }) :
+                originalQuery(parameters)
+        );
+
+        // Hide Chrome automation
+        window.chrome = {
+            runtime: {},
+        };
+
+        // Fix iframe detection
+        Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', {
+            get: function() {
+                return window;
+            }
+        });
+
+        // Mock battery API
+        Object.defineProperty(navigator, 'getBattery', {
+            value: () => Promise.resolve({
+                charging: true,
+                chargingTime: 0,
+                dischargingTime: Infinity,
+                level: 1.0
+            })
+        });
+    });
 
     return { browser, page };
 }
