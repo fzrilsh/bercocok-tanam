@@ -144,13 +144,19 @@ async function axiosRequestWithRetry(axiosInstance, method, url, options, log, m
     throw new Error(`Failed after ${maxRetries} retries`);
 }
 
-async function harvestOAuthState(axiosInstance, log) {
+async function harvestOAuthState(axiosInstance, log, affCode = null) {
     log("Phase 0: Harvesting OAuth state...");
+    
+    let url = `${TOKENGO_API}/oauth/state`;
+    if (affCode) {
+        url += `?aff=${affCode}`;
+        log(`Using affiliate code: ${affCode}`);
+    }
     
     const response = await axiosRequestWithRetry(
         axiosInstance,
         "GET",
-        `${TOKENGO_API}/oauth/state`,
+        url,
         {},
         log
     );
@@ -498,6 +504,44 @@ function saveApiKey(email, userId, apiKey, log) {
     log(`API key saved to ${resultFile}`);
 }
 
+async function getAffiliateCode(axiosInstance, sessionCookie, userId, log) {
+    log("Fetching affiliate code...");
+    
+    const headers = {
+        "accept": "application/json, text/plain, */*",
+        "cookie": `session=${sessionCookie}; thorbase_do_not_sell_or_share=true;`,
+        "llmapi-user": String(userId),
+        "referer": `${TOKENGO_DASHBOARD}/billing`,
+        "cache-control": "no-cache",
+        "pragma": "no-cache",
+    };
+    
+    const response = await axiosRequestWithRetry(
+        axiosInstance,
+        "GET",
+        `${TOKENGO_API}/user/self`,
+        { headers },
+        log
+    );
+    
+    if (response.status !== 200) {
+        log(`Failed to fetch affiliate code: HTTP ${response.status}`);
+        return null;
+    }
+    
+    const data = response.data;
+    
+    if (!data.success || !data.data?.referralCode) {
+        log(`No referral code found in response: ${JSON.stringify(data)}`);
+        return null;
+    }
+    
+    const affCode = data.data.referralCode;
+    log(`Affiliate code harvested: ${affCode}`);
+    
+    return affCode;
+}
+
 async function ensureProviderNode(log) {
     log("Phase 4.1: Checking TokenGo provider node...");
     
@@ -602,6 +646,7 @@ async function processTokenGoAccountOnce(
     updateProgress,
     proxy, // Proxy is now passed in
     poolProxy, // Track if this is from pool (for cleanup)
+    affCode = null, // Affiliate code from previous account
 ) {
     const config = getConfig();
     let oauthState = null;
@@ -610,14 +655,15 @@ async function processTokenGoAccountOnce(
     let userId = null;
     let apiKey = null;
     let browser = null;
+    let newAffCode = null; // New affiliate code to pass to next account
     
     // Create axios instance with proxy support for all TokenGo API calls
     const axiosInstance = createAxiosInstance(proxy, log);
     
     try {
-        // Phase 0: Harvest OAuth state (HTTP only, with proxy)
+        // Phase 0: Harvest OAuth state (HTTP only, with proxy, with affiliate code)
         updateProgress({ step: "Harvesting state" });
-        const phase0Result = await harvestOAuthState(axiosInstance, log);
+        const phase0Result = await harvestOAuthState(axiosInstance, log, affCode);
         oauthState = phase0Result.state;
         stateCookies = phase0Result.cookies;
         
@@ -678,6 +724,14 @@ async function processTokenGoAccountOnce(
             apiKey = await revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log);
             saveApiKey(account.email, userId, apiKey, log);
             
+            // Phase 3.5: Harvest affiliate code for next account
+            updateProgress({ step: "Harvesting aff code" });
+            try {
+                newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
+            } catch (affErr) {
+                log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
+            }
+            
             // Phase 4: Register to 9router (localhost, no proxy)
             updateProgress({ step: STEPS.IMPORTING });
             try {
@@ -697,6 +751,8 @@ async function processTokenGoAccountOnce(
     } finally {
         // Cleanup is now handled by wrapper function
     }
+    
+    return newAffCode; // Return affiliate code for next account
 }
 
 async function processTokenGoAccount(
@@ -706,6 +762,7 @@ async function processTokenGoAccount(
     log,
     updateProgress,
     useProxy = true,
+    affCode = null, // Affiliate code from previous account
 ) {
     const config = getConfig();
     const usedProxies = new Set(); // Track proxies we've already tried
@@ -735,7 +792,7 @@ async function processTokenGoAccount(
         }
         
         try {
-            await processTokenGoAccountOnce(
+            const newAffCode = await processTokenGoAccountOnce(
                 account,
                 browserArgsIndex,
                 workerIndex,
@@ -743,6 +800,7 @@ async function processTokenGoAccount(
                 updateProgress,
                 proxy,
                 poolProxy,
+                affCode,
             );
             
             // Success! Clean up and return
@@ -750,7 +808,7 @@ async function processTokenGoAccount(
                 releaseProxy(poolProxy);
                 log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
             }
-            return;
+            return newAffCode; // Return new affiliate code for next account
             
         } catch (error) {
             // Release proxy before retrying
@@ -790,6 +848,7 @@ async function runTokenGoWorker(
     let successCount = 0;
     let failedCount = 0;
     let processedCount = 0;
+    let lastAffiliateCode = null; // Track affiliate code chain
     
     const accountStats = [];
     const queue = [...workerAccounts];
@@ -833,14 +892,21 @@ async function runTokenGoWorker(
             
             queue.shift();
             
-            await processTokenGoAccount(
+            const newAffCode = await processTokenGoAccount(
                 account,
                 browserArgsIndex,
                 workerIndex,
                 log,
                 updateProgress,
                 useProxy,
+                lastAffiliateCode,
             );
+            
+            // Update affiliate code for next account
+            if (newAffCode) {
+                lastAffiliateCode = newAffCode;
+                log(`Affiliate code updated for next account: ${newAffCode}`);
+            }
             
             accountSuccess = true;
             successCount += 1;
