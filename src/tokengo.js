@@ -356,9 +356,12 @@ async function exchangeOAuthCallback(axiosInstance, code, state, originalState, 
     }
     
     const sessionCookie = sessionMatch[1].trim();
-    log(`Session cookie: ${sessionCookie.substring(0, 30)}...`);
+    log(`Session cookie (first 30): ${sessionCookie.substring(0, 30)}...`);
+    log(`Session cookie (FULL): ${sessionCookie}`);
     
     const data = response.data;
+    
+    log(`OAuth callback response (FULL JSON): ${JSON.stringify(data, null, 2)}`);
     
     if (!data.success || !data.data?.id) {
         throw new Error(`OAuth callback failed: ${JSON.stringify(data)}`);
