@@ -702,6 +702,7 @@ async function processTokenGoAccount(
     workerIndex,
     log,
     updateProgress,
+    useProxy = true,
 ) {
     const config = getConfig();
     const usedProxies = new Set(); // Track proxies we've already tried
@@ -711,7 +712,7 @@ async function processTokenGoAccount(
         let proxy = account.proxy || null;
         
         // Acquire proxy (skip already tried ones)
-        if (!proxy && config.proxyPoolFile) {
+        if (!proxy && config.proxyPoolFile && useProxy) {
             let attempts = 0;
             while (attempts < 10) { // Try up to 10 times to get a fresh proxy
                 poolProxy = await acquireProxy(log, updateProgress);
@@ -779,6 +780,7 @@ async function runTokenGoWorker(
     total,
     progress,
     log,
+    useProxy = true,
 ) {
     const config = getConfig();
     
@@ -834,6 +836,7 @@ async function runTokenGoWorker(
                 workerIndex,
                 log,
                 updateProgress,
+                useProxy,
             );
             
             accountSuccess = true;
@@ -903,7 +906,7 @@ async function runTokenGoWorker(
     };
 }
 
-async function runTokenGoAutomation(sharedProgress = null) {
+async function runTokenGoAutomation(sharedProgress = null, useProxy = true) {
     const config = getConfig();
     const logger = createFileLogger();
     const accounts = readAccounts();
@@ -949,6 +952,7 @@ async function runTokenGoAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
+                useProxy,
             );
         }),
     );

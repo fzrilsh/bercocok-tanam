@@ -323,12 +323,13 @@ async function processCFAccount(
     workerIndex,
     log,
     updateProgress,
+    useProxy = true,
 ) {
     const config = getConfig();
     let poolProxy = null;
     let proxy = account.proxy || null;
 
-    if (!proxy && config.proxyPoolFile) {
+    if (!proxy && config.proxyPoolFile && useProxy) {
         poolProxy = await acquireProxy(log, updateProgress);
         proxy = poolProxy;
     }
@@ -394,6 +395,7 @@ async function runCFWorker(
     total,
     progress,
     log,
+    useProxy = true,
 ) {
     const config = getConfig();
 
@@ -449,6 +451,7 @@ async function runCFWorker(
                 workerIndex,
                 log,
                 updateProgress,
+                useProxy,
             );
 
             accountSuccess = true;
@@ -518,7 +521,7 @@ async function runCFWorker(
     };
 }
 
-async function runCloudflareAutomation(sharedProgress = null) {
+async function runCloudflareAutomation(sharedProgress = null, useProxy = true) {
     const config = getConfig();
     const logger = createFileLogger();
     const accounts = readAccounts();
@@ -560,6 +563,7 @@ async function runCloudflareAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
+                useProxy,
             );
         }),
     );

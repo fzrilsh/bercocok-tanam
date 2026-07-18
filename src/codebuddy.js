@@ -408,12 +408,13 @@ async function processCodebuddyAccount(
     workerIndex,
     log,
     updateProgress,
+    useProxy = true,
 ) {
     const config = getConfig();
     let poolProxy = null;
     let proxy = account.proxy || null;
 
-    if (!proxy && config.proxyPoolFile) {
+    if (!proxy && config.proxyPoolFile && useProxy) {
         poolProxy = await acquireProxy(log, updateProgress);
         proxy = poolProxy;
     }
@@ -478,6 +479,7 @@ async function runCodebuddyWorker(
     total,
     progress,
     log,
+    useProxy = true,
 ) {
     const config = getConfig();
 
@@ -533,6 +535,7 @@ async function runCodebuddyWorker(
                 workerIndex,
                 log,
                 updateProgress,
+                useProxy,
             );
 
             accountSuccess = true;
@@ -602,7 +605,7 @@ async function runCodebuddyWorker(
     };
 }
 
-async function runCodebuddyAutomation(sharedProgress = null) {
+async function runCodebuddyAutomation(sharedProgress = null, useProxy = true) {
     const config = getConfig();
     const logger = createFileLogger();
     const accounts = readAccounts();
@@ -648,6 +651,7 @@ async function runCodebuddyAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
+                useProxy,
             );
         }),
     );
