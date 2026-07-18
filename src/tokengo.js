@@ -531,12 +531,12 @@ async function getAffiliateCode(axiosInstance, sessionCookie, userId, log) {
     
     const data = response.data;
     
-    if (!data.success || !data.data?.referralCode) {
+    if (!data.success || !data.data?.aff_code) {
         log(`No referral code found in response: ${JSON.stringify(data)}`);
         return null;
     }
     
-    const affCode = data.data.referralCode;
+    const affCode = data.data.aff_code;
     log(`Affiliate code harvested: ${affCode}`);
     
     return affCode;
