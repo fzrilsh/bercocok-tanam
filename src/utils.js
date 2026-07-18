@@ -256,7 +256,7 @@ function createFileLogger() {
 const activeAccounts = new Set();
 const activeProxies = new Set();
 const proxyLastUsed = new Map(); // IP:port -> last used timestamp
-const PROXY_COOLDOWN_MS = 30 * 60 * 1000; // 30 minutes cooldown
+const PROXY_COOLDOWN_MS = 60 * 1000; // 60s cooldown after release
 const ACCOUNT_LOCK_POLL_MS = 2000; // Check every 2 seconds if account lock is released
 const PROXY_POOL_POLL_MS = 2000; // Check every 2 seconds if proxy becomes available
 const PROXY_WAIT_BUFFER_MS = 1000; // Extra buffer when waiting for proxy cooldown
@@ -344,7 +344,6 @@ async function acquireProxy(log, progressUpdate) {
             // Check if proxy available (not in use AND past cooldown)
             if (!activeProxies.has(proxy) && cooldownRemaining <= 0) {
                 activeProxies.add(proxy);
-                proxyLastUsed.set(proxyIP, Date.now());
                 if (log) {log(`[Proxy] Acquired: ${proxyIP.split(':')[0]}`);}
                 return proxy;
             }
@@ -384,7 +383,10 @@ function tryAcquireProxy() {
 }
 
 function releaseProxy(proxy) {
-    if (proxy) {activeProxies.delete(proxy);}
+    if (proxy) {
+        activeProxies.delete(proxy);
+        proxyLastUsed.set(getProxyIP(proxy), Date.now());
+    }
 }
 
 module.exports = {
