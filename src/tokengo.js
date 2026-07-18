@@ -1,4 +1,5 @@
 const fs = require("fs");
+const crypto = require("crypto");
 const axios = require("axios");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { getConfig, getResultFile } = require("./config");
@@ -386,11 +387,14 @@ function buildAuthHeaders(sessionCookie, userId) {
 async function createToken(axiosInstance, sessionCookie, userId, log) {
     log("Phase 3.1: Creating new token entry...");
     
+    const randomName = crypto.randomBytes(6).toString('hex');
+    
     const payload = {
-        name: "Terminal-Fresh-Key",
-        remain_quota: 0,
+        name: randomName,
         expired_time: -1,
+        remain_quota: 0,
         unlimited_quota: true,
+        group: "default",
     };
     
     const response = await axiosRequestWithRetry(
