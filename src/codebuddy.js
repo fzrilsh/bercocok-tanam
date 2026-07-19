@@ -1,4 +1,5 @@
 const { getConfig, SHARED_SELECTORS } = require("./config");
+const axios = require("axios");
 const {
     sleep,
     readAccounts,
@@ -13,7 +14,7 @@ const {
     acquireProxy,
     releaseProxy,
 } = require("./utils");
-const { launchBrowser } = require("./browser");
+const { launchBrowser, setupConditionalProxyInterception } = require("./browser");
 const {
     completeGoogleLogin,
     clickSelector,
@@ -22,40 +23,68 @@ const {
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
 
-const QUEUE_RETRY_DELAY_MS = 500; // Wait before retrying locked account from queue
+const QUEUE_RETRY_DELAY_MS = 500;
 
-async function openCodebuddyOAuthAndGetNewPage(browser, page, log) {
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    const targetUrl = `${baseUrl}/dashboard/providers/codebuddy-int`;
-
-    log(`Navigating to ${targetUrl}`);
-    await page.goto(targetUrl, {
-        waitUntil: "networkidle2",
-        timeout: config.timeouts.navigation,
-    });
-
-    log("Setting up new page listener...");
+async function getCodebuddyDeviceCode(routerUrl, log) {
+    const baseUrl = routerUrl.replace(/\/$/, "");
+    const url = `${baseUrl}/api/oauth/codebuddy-int/device-code`;
     
-    // Create promise that resolves when new page is created
-    const newPagePromise = new Promise(resolve => {
-        browser.once('targetcreated', async target => {
-            const newPage = await target.page();
-            resolve(newPage);
+    log(`[API] Requesting device code from ${url}`);
+    
+    try {
+        const response = await axios.get(url, {
+            headers: {
+                'Accept': '*/*',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+            }
         });
-    });
+        
+        log(`[API] Device code received: ${response.data.device_code}`);
+        return response.data;
+    } catch (error) {
+        log(`[API] Error getting device code: ${error.message}`);
+        throw new Error(`Failed to get device code: ${error.message}`);
+    }
+}
 
-    log("Clicking OAuth button...");
-    await clickSelector(page, 'button::-p-text(OAuth)', {
-        timeout: config.timeouts.default,
-    });
-
-    log("Waiting for new tab to be created...");
-    const newPage = await newPagePromise;
+async function pollCodebuddyCompletion(routerUrl, deviceCode, codeVerifier, log) {
+    const baseUrl = routerUrl.replace(/\/$/, "");
+    const url = `${baseUrl}/api/oauth/codebuddy-int/poll`;
     
-    log(`New tab created: ${newPage.url()}`);
+    const startTime = Date.now();
+    const timeout = 120000;
+    const pollInterval = 500;
     
-    return newPage;
+    log(`[API] Starting polling for device code: ${deviceCode}`);
+    
+    while (Date.now() - startTime < timeout) {
+        try {
+            const response = await axios.post(url, {
+                deviceCode: deviceCode,
+                codeVerifier: codeVerifier,
+                extraData: null
+            }, {
+                headers: {
+                    'Accept': '*/*',
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
+                }
+            });
+            
+            if (response.data.success === true) {
+                log(`[API] Polling successful! Connection ID: ${response.data.connection.id}`);
+                return response.data;
+            }
+            
+            log(`[API] Polling... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
+        } catch (error) {
+            log(`[API] Polling error: ${error.message}`);
+        }
+        
+        await sleep(pollInterval);
+    }
+    
+    throw new Error('Polling timeout after 120 seconds');
 }
 
 async function clickSelectorInAnyFrame(page, selector, timeout = 15000, delayBeforeClick = 2000) {
@@ -375,33 +404,6 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
     }
 }
 
-async function waitForOAuthComplete(routerPage, log) {
-    const config = getConfig();
-    const maxWaitTime = 60000; // 60 seconds max
-    const checkInterval = 2000; // Check every 2 seconds
-    const startTime = Date.now();
-
-    log("Waiting for OAuth modal to disappear in 9router...");
-    
-    while (Date.now() - startTime < maxWaitTime) {
-        const modalExists = await routerPage.evaluate(() => {
-            const modalText = document.body.innerText;
-            return modalText.includes("Waiting for authorization") || 
-                   modalText.includes("Connect CodeBuddy INT");
-        });
-
-        if (!modalExists) {
-            log("OAuth modal disappeared - import successful!");
-            return true;
-        }
-
-        log(`OAuth modal still present, waiting ${checkInterval/1000}s...`);
-        await sleep(checkInterval);
-    }
-
-    throw new Error("OAuth modal still present after 60s - import may have failed");
-}
-
 async function processCodebuddyAccount(
     account,
     browserArgsIndex,
@@ -420,37 +422,73 @@ async function processCodebuddyAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser for ${account.email}`);
+    
+    log(`Getting device code from router API...`);
+    const deviceCodeData = await getCodebuddyDeviceCode(config.routerUrl, log);
+    const { device_code, verification_uri, codeVerifier } = deviceCodeData;
 
-    const { browser, page: routerPage } = await launchBrowser(
+    log(`Launching browser for ${account.email}`);
+    const { browser, page, proxy: conditionalProxy } = await launchBrowser(
         browserArgsIndex,
         workerIndex,
         proxy,
+        { conditionalProxy: true }
     );
 
-    let codebuddyPage = null;
+    if (conditionalProxy) {
+        await setupConditionalProxyInterception(page, conditionalProxy, log);
+        
+        browser.on('targetcreated', async (target) => {
+            try {
+                const newPage = await target.page();
+                if (newPage) {
+                    await setupConditionalProxyInterception(newPage, conditionalProxy, log);
+                }
+            } catch (err) {
+                log(`[Proxy] Could not setup interception on new target: ${err.message}`);
+            }
+        });
+    }
 
     try {
         updateProgress({ step: STEPS.NAVIGATING });
-        codebuddyPage = await openCodebuddyOAuthAndGetNewPage(browser, routerPage, log);
+        log(`Navigating to verification URI: ${verification_uri}`);
+        await page.goto(verification_uri, {
+            waitUntil: "networkidle2",
+            timeout: config.timeouts.navigation,
+        });
 
-        await handleCodebuddyLogin(codebuddyPage, log);
-        await handleConfirmButton(codebuddyPage, log);
+        let pollingPromise = null;
+        let pollingStarted = false;
+
+        await handleCodebuddyLogin(page, log);
+        await handleConfirmButton(page, log);
 
         updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await completeGoogleLogin(codebuddyPage, account, log);
-        await handlePostLogin(codebuddyPage, log);
+        
+        pollingPromise = pollCodebuddyCompletion(
+            config.routerUrl,
+            device_code,
+            codeVerifier,
+            log
+        );
+        pollingStarted = true;
+        log(`[API] Polling started in background`);
+
+        await completeGoogleLogin(page, account, log);
+        await handlePostLogin(page, log);
 
         updateProgress({ step: STEPS.WAITING });
-        await handleRegionSelectionAndWaitForSuccess(codebuddyPage, log);
+        await handleRegionSelectionAndWaitForSuccess(page, log);
 
         updateProgress({ step: STEPS.IMPORTING });
-        await waitForOAuthComplete(routerPage, log);
-
-        // Close the Codebuddy tab AFTER OAuth confirmed complete
-        log("OAuth complete, closing Codebuddy tab...");
-        await codebuddyPage.close();
-        codebuddyPage = null;
+        log(`Waiting for polling to complete...`);
+        
+        if (pollingStarted) {
+            await pollingPromise;
+        } else {
+            throw new Error('Polling was not started');
+        }
 
         removeAccount(account.rawLine);
         log(
@@ -459,9 +497,6 @@ async function processCodebuddyAccount(
 
         await sleep(config.delays.beforeBrowserClose);
     } finally {
-        if (codebuddyPage && !codebuddyPage.isClosed()) {
-            await codebuddyPage.close().catch(() => {});
-        }
         await browser.close();
         log("Browser closed.");
         if (poolProxy) {

@@ -4,6 +4,8 @@ const path = require("path");
 const crypto = require("crypto");
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
+const axios = require("axios");
+const { HttpsProxyAgent } = require("https-proxy-agent");
 
 puppeteer.use(StealthPlugin());
 
@@ -46,12 +48,13 @@ function parseProxyForPuppeteer(proxy) {
     return result;
 }
 
-async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
+async function launchBrowser(browserArgsIndex, workerIndex, proxy, options = {}) {
     const config = getConfig();
     const extraArgs = ["--start-maximized"];
     let proxyAuth = null;
+    const { conditionalProxy = false } = options;
 
-    if (proxy) {
+    if (proxy && !conditionalProxy) {
         const parsed = parseProxyForPuppeteer(proxy);
 
         if (parsed) {
@@ -93,9 +96,85 @@ async function launchBrowser(browserArgsIndex, workerIndex, proxy) {
 
     await page.setUserAgent(randomUA());
 
-    return { browser, page };
+    return { browser, page, proxy: conditionalProxy ? proxy : null, proxyAuth };
+}
+
+const GOOGLE_DOMAINS = [
+    'accounts.google.com',
+    'gstatic.com',
+    'googleapis.com',
+    'google.com',
+    'googleusercontent.com',
+    'gvt1.com'
+];
+
+function isGoogleDomain(url) {
+    try {
+        const urlObj = new URL(url);
+        return GOOGLE_DOMAINS.some(domain => 
+            urlObj.hostname === domain || urlObj.hostname.endsWith('.' + domain)
+        );
+    } catch {
+        return false;
+    }
+}
+
+async function setupConditionalProxyInterception(page, proxy, log) {
+    if (!proxy) {
+        return;
+    }
+
+    log(`[Proxy] Setting up conditional proxy interception (bypass Google domains)`);
+
+    const proxyAgent = new HttpsProxyAgent(proxy);
+
+    await page.setRequestInterception(true);
+
+    page.on('request', async (request) => {
+        const url = request.url();
+        
+        if (isGoogleDomain(url)) {
+            log(`[Proxy] Bypassing proxy for Google domain: ${new URL(url).hostname}`);
+            request.continue();
+            return;
+        }
+
+        try {
+            const headers = { ...request.headers() };
+            
+            delete headers['host'];
+            delete headers['content-length'];
+            delete headers[':authority'];
+            delete headers[':method'];
+            delete headers[':path'];
+            delete headers[':scheme'];
+
+            const response = await axios({
+                url: url,
+                method: request.method(),
+                headers: headers,
+                data: request.postData(),
+                httpAgent: proxyAgent,
+                httpsAgent: proxyAgent,
+                maxRedirects: 0,
+                validateStatus: () => true,
+                responseType: 'arraybuffer',
+                timeout: 30000
+            });
+
+            request.respond({
+                status: response.status,
+                headers: response.headers,
+                body: response.data
+            });
+        } catch (error) {
+            log(`[Proxy] Error routing through proxy for ${new URL(url).hostname}: ${error.message}`);
+            request.abort('failed');
+        }
+    });
 }
 
 module.exports = {
     launchBrowser,
+    setupConditionalProxyInterception,
 };
