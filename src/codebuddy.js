@@ -259,14 +259,21 @@ async function handlePostLogin(codebuddyPage, log) {
     try {
         log("Clicking Login/Allow/Continue...");
 
-        // Scroll to bottom to ensure button is in viewport for headless mode
         await codebuddyPage.keyboard.press('End');
 
-        await clickFirstVisibleSelector(
-            codebuddyPage,
-            SHARED_SELECTORS.loginOptions,
-            config.timeouts.short,
-        );
+        await Promise.all([
+            codebuddyPage.waitForNavigation({ 
+                waitUntil: 'networkidle2',
+                timeout: 60000 
+            }).catch(() => log("Navigation timeout or no navigation occurred")),
+            clickFirstVisibleSelector(
+                codebuddyPage,
+                SHARED_SELECTORS.loginOptions,
+                config.timeouts.short,
+            )
+        ]);
+        
+        log("Navigation completed after clicking Allow/Continue");
     } catch (_) {
         log("No Login button found");
     }
