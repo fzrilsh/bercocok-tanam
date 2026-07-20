@@ -478,9 +478,6 @@ async function processCodebuddyAccount(
         await completeGoogleLogin(page, account, log);
         await handlePostLogin(page, log);
 
-        updateProgress({ step: STEPS.WAITING });
-        await handleRegionSelectionAndWaitForSuccess(page, log);
-
         updateProgress({ step: STEPS.IMPORTING });
         log(`Waiting for polling to complete...`);
         
