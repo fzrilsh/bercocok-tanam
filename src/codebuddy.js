@@ -171,8 +171,8 @@ async function handleCodebuddyLogin(codebuddyPage, log) {
         log("Loading overlay still present or timeout, continuing...");
     }
     
-    log("Waiting 2 seconds for elements to be fully interactive...");
-    await sleep(2000);
+    log("Waiting 4 seconds for elements to be fully interactive...");
+    await sleep(4000);
 
     // Debug: check frames and elements
     const debugInfo = await codebuddyPage.evaluate(() => {
@@ -200,7 +200,7 @@ async function handleCodebuddyLogin(codebuddyPage, log) {
     for (const selector of selectors) {
         try {
             log(`Searching for selector: ${selector}...`);
-            result = await clickSelectorInAnyFrame(codebuddyPage, selector, 5000, 2000);
+            result = await clickSelectorInAnyFrame(codebuddyPage, selector, 5000, 4000);
             log(`Found '${selector}' in frame '${result.frameName}', clicked successfully`);
             break;
         } catch (err) {
