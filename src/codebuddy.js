@@ -313,8 +313,7 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
     // If on intermediate/transition pages, wait for redirect to final destination
     const isIntermediatePage = (url) => {
         return url.includes("/login/select") || 
-               url.includes("/login-actions/first-broker-login") ||
-               url.includes("/login-actions/first-broker-lo");
+               url.includes("/login-actions/");
     };
     
     if (isIntermediatePage(currentUrl)) {
@@ -497,7 +496,10 @@ async function processCodebuddyAccount(
             device_code,
             codeVerifier,
             log
-        );
+        ).catch(err => {
+            log(`[API] Polling failed: ${err.message}`);
+            return { success: false, error: err.message };
+        });
         pollingStarted = true;
         log(`[API] Polling started in background`);
 
