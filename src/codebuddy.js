@@ -277,18 +277,37 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
 
     log("Waiting for redirect after Google login...");
     
-    // Wait for page to navigate through intermediate states
-    // Flow: /auth/.../first-broker-login → /started (brief) → /login/select → /register/user/complete OR /started (final)
     await sleep(3000);
     
     let currentUrl = codebuddyPage.url();
     log(`Current URL: ${currentUrl}`);
     
+    // If still on Google domain, wait for redirect to codebuddy
+    if (currentUrl.includes('google.com') || currentUrl.includes('googleusercontent.com')) {
+        log("Still on Google domain, waiting for redirect to codebuddy...");
+        try {
+            await codebuddyPage.waitForFunction(
+                () => {
+                    const url = window.location.href;
+                    return !url.includes('google.com') && 
+                           !url.includes('googleusercontent.com') && 
+                           url.includes('codebuddy.ai');
+                },
+                { timeout: 30000 }
+            );
+            currentUrl = codebuddyPage.url();
+            log(`Redirected to codebuddy: ${currentUrl}`);
+        } catch (err) {
+            log(`Timeout waiting for redirect to codebuddy. Current URL: ${currentUrl}`);
+            throw new Error(`Failed to redirect from Google to codebuddy. Still at: ${currentUrl}`);
+        }
+    }
+    
     // If on intermediate/transition pages, wait for redirect to final destination
     const isIntermediatePage = (url) => {
         return url.includes("/login/select") || 
                url.includes("/login-actions/first-broker-login") ||
-               url.includes("/login-actions/first-broker-lo"); // Truncated version
+               url.includes("/login-actions/first-broker-lo");
     };
     
     if (isIntermediatePage(currentUrl)) {
@@ -477,6 +496,9 @@ async function processCodebuddyAccount(
 
         await completeGoogleLogin(page, account, log);
         await handlePostLogin(page, log);
+
+        updateProgress({ step: STEPS.WAITING });
+        await handleRegionSelectionAndWaitForSuccess(page, log);
 
         updateProgress({ step: STEPS.IMPORTING });
         log(`Waiting for polling to complete...`);
