@@ -158,14 +158,19 @@ async function harvestToken(page, log) {
 
     const groups = permResult.data?.result || [];
     const permIds = groups
-        .filter((g) => (g.name || "").toLowerCase().includes("workers ai"))
+        .filter((g) => {
+            const n = (g.name || "").toLowerCase();
+            const isScriptEdit = n.includes("workers scripts write") || n.includes("worker scripts write");
+            const isAI = n.includes("workers ai");
+            return isScriptEdit || isAI;
+        })
         .map((g) => ({ id: g.id, name: g.name || "" }));
 
     if (permIds.length === 0) {
-        throw new Error("No Workers AI permission groups found");
+        throw new Error("No Workers AI / Script permission groups found");
     }
 
-    log(`Found ${permIds.length} Workers AI permission groups`);
+    log(`Found ${permIds.length} Workers AI / Script permission groups`);
     log("Creating API token...");
 
     const payload = {
@@ -220,13 +225,12 @@ async function harvestToken(page, log) {
 
 function saveToken(accountId, token, log) {
     const resultFile = getResultFile("cloudflare");
-    const baseUrl = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/v1`;
 
     ensureFileExists(resultFile);
 
     fs.appendFileSync(
         resultFile,
-        `cloudflare_${accountId.slice(0, 6)}|${baseUrl}|${token}|${MODELS}\n`,
+        `cloudflare_${accountId.slice(0, 6)}|${token}|${accountId}\n`,
     );
 
     log(`Token saved to ${resultFile}`);
@@ -268,6 +272,47 @@ async function validateProvider(apiKey, accountId, log) {
     }
 
     log("Validation OK");
+
+    return data;
+}
+
+async function deployCloudflareRelay(apiKey, accountId, log) {
+    const config = getConfig();
+    const baseUrl = config.routerUrl.replace(/\/$/, "");
+    const apiUrl = `${baseUrl}/api/proxy-pools/cloudflare-deploy`;
+    const connectionName = `cloudflareproxy_${accountId.slice(0, 6)}`;
+
+    log(`Deploying Cloudflare relay "${connectionName}"...`);
+
+    const response = await fetch(apiUrl, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+        },
+        body: JSON.stringify({
+            accountId: accountId,
+            apiToken: apiKey,
+            projectName: connectionName,
+        }),
+    });
+
+    const text = await response.text();
+    let data;
+
+    try {
+        data = JSON.parse(text);
+    } catch (_) {
+        throw new Error(`Invalid JSON from deploy: ${text.substring(0, 100)}`);
+    }
+
+    if (!response.ok) {
+        throw new Error(
+            `Deploy error ${response.status}: ${data.error || JSON.stringify(data)}`,
+        );
+    }
+
+    log(`Successfully deployed relay! URL: ${data.deployUrl}`);
 
     return data;
 }
@@ -368,6 +413,7 @@ async function processCFAccount(
 
         updateProgress({ step: STEPS.IMPORTING_CF });
         try {
+            await deployCloudflareRelay(token, accountId, log);
             await importToRouter(token, accountId, log);
         } catch (importErr) {
             log(`Router import failed (continuing): ${importErr.message}`);

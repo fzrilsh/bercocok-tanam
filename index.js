@@ -8,6 +8,7 @@ const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
 const { openSettings } = require("./src/settings");
+const { closeAllActiveBrowsers } = require("./src/browser");
 const fs = require("fs");
 const retryDir = './retryAccounts';
 
@@ -388,4 +389,14 @@ async function main() {
 main().catch((error) => {
     console.error(`Fatal error: ${error.message}`);
     process.exitCode = 1;
+});
+
+process.on("SIGINT", async () => {
+    console.log(colors.yellow("\n[SIGINT] Interrupted by user. Closing browsers and exiting..."));
+    try {
+        await closeAllActiveBrowsers();
+    } catch (e) {
+        // ignore
+    }
+    process.exit(0);
 });

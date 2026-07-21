@@ -48,6 +48,8 @@ function parseProxyForPuppeteer(proxy) {
     return result;
 }
 
+const activeBrowsers = new Set();
+
 async function launchBrowser(browserArgsIndex, workerIndex, proxy, options = {}) {
     const config = getConfig();
     const extraArgs = ["--start-maximized"];
@@ -81,9 +83,12 @@ async function launchBrowser(browserArgsIndex, workerIndex, proxy, options = {})
         ignoreDefaultArgs: ["--enable-automation"],
     });
 
+    activeBrowsers.add(browser);
+
     // Patch browser.close to auto-cleanup the userDataDir after closing
     const originalClose = browser.close.bind(browser);
     browser.close = async () => {
+        activeBrowsers.delete(browser);
         await originalClose();
         cleanupUserDataDir(userDataDir);
     };
@@ -174,7 +179,14 @@ async function setupConditionalProxyInterception(page, proxy, log) {
     });
 }
 
+async function closeAllActiveBrowsers() {
+    const browsers = Array.from(activeBrowsers);
+    await Promise.allSettled(browsers.map(b => b.close().catch(() => {})));
+    activeBrowsers.clear();
+}
+
 module.exports = {
     launchBrowser,
     setupConditionalProxyInterception,
+    closeAllActiveBrowsers,
 };
