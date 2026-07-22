@@ -1,9 +1,34 @@
+# Node.js
 node_modules/
+package-lock.json
+
+# Environment
 .env
+
+# Logs
 logs/
+*.log
+
+# Accounts & Keys
 accounts.txt
+accounts.json
 *_keys.txt
 errorAccounts.txt
-package-lock.json
-.claude
 retryAccounts/
+
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# IDE
+.claude
+.vscode/
+.idea/

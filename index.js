@@ -7,6 +7,7 @@ const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
+const { runGitHubSignupAutomation, checkPythonAvailable } = require("./src/github-signup-python");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
 const retryDir = './retryAccounts';
@@ -24,6 +25,29 @@ async function waitForEnter() {
 
 async function retryFailedAccounts(failedAccountsList, automationType) {
     const inquirer = (await import("inquirer")).default;
+
+    if (automationType === 'github') {
+        const { retry } = await inquirer.prompt([
+            {
+                type: "confirm",
+                name: "retry",
+                message: `${failedAccountsList.length} GitHub account(s) failed to create. Retry creating ${failedAccountsList.length} more account(s)?`,
+                default: true,
+            },
+        ]);
+
+        if (retry) {
+            console.log(`\nRetrying GitHub signup for ${failedAccountsList.length} account(s)...\n`);
+            const result = await runGitHubSignupAutomation(failedAccountsList.length, null, true);
+            
+            if (result && result.successCount > 0) {
+                console.log(`✅ Successfully created ${result.successCount} GitHub account(s)!\n`);
+            }
+        } else {
+            console.log(`Skipped retry for ${failedAccountsList.length} failed GitHub account(s).\n`);
+        }
+        return;
+    }
 
     while (failedAccountsList.length > 0) {
         const { retry } = await inquirer.prompt([
@@ -172,14 +196,15 @@ function displayInfoPanel() {
     console.log("");
 }
 
-async function runSelectedAutomations(selectedAutomations, proxySettings) {
+async function runSelectedAutomations(selectedAutomations, proxySettings, githubAccountCount = 1) {
     const { createProgressManager } = require("./src/progress");
     
     const automationMap = {
         kiro: { name: 'Kiro', fn: runKiroAutomation },
         cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
-        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation }
+        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
+        github: { name: 'GitHub Signup', fn: runGitHubSignupAutomation }
     };
 
     console.log("");
@@ -214,9 +239,12 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
     );
 
     // Run selected automations in parallel
-    const promises = selectedAutomations.map(type => 
-        automationMap[type].fn(sharedProgress, proxySettings[type])
-    );
+    const promises = selectedAutomations.map(type => {
+        if (type === 'github') {
+            return automationMap[type].fn(githubAccountCount, sharedProgress, proxySettings[type]);
+        }
+        return automationMap[type].fn(sharedProgress, proxySettings[type]);
+    });
 
     const results = await Promise.all(promises);
     sharedProgress.stop();
@@ -298,7 +326,8 @@ async function main() {
                     kiro: { name: 'Kiro' },
                     cloudflare: { name: 'Cloudflare' },
                     codebuddy: { name: 'Codebuddy' },
-                    tokengo: { name: 'TokenGo' }
+                    tokengo: { name: 'TokenGo' },
+                    github: { name: 'GitHub Signup' }
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -326,12 +355,37 @@ async function main() {
                                 value: "tokengo",
                                 checked: true
                             },
+                            { 
+                                name: "GitHub Signup (Create new GitHub accounts)", 
+                                value: "github"
+                            },
                         ],
                         // No validation - allow empty selection to go back
                     },
                 ]);
 
                 if (selected.length > 0) {
+                    let githubAccountCount = 1;
+                    
+                    if (selected.includes('github')) {
+                        const { count } = await inquirer.prompt([
+                            {
+                                type: "input",
+                                name: "count",
+                                message: "How many GitHub accounts to create?",
+                                default: "1",
+                                validate: (input) => {
+                                    const num = parseInt(input);
+                                    if (isNaN(num) || num <= 0) {
+                                        return "Please enter a valid positive number";
+                                    }
+                                    return true;
+                                }
+                            }
+                        ]);
+                        githubAccountCount = parseInt(count);
+                    }
+                    
                     const proxies = readProxyPool();
                     let proxySettings = {};
 
@@ -369,7 +423,7 @@ async function main() {
                         });
                     }
 
-                    await runSelectedAutomations(selected, proxySettings);
+                    await runSelectedAutomations(selected, proxySettings, githubAccountCount);
                 }
                 // If selection is empty, just continue loop (back to main menu)
                 break;
