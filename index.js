@@ -7,6 +7,7 @@ const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
+const { runAerolinkAutomation } = require("./src/aerolink");
 const { openSettings } = require("./src/settings");
 const { closeAllActiveBrowsers } = require("./src/browser");
 const fs = require("fs");
@@ -72,6 +73,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runCodebuddyAutomation();
         } else if (automationType === "tokengo") {
             result = await runTokenGoAutomation();
+        } else if (automationType === "aerolink") {
+            result = await runAerolinkAutomation();
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -180,7 +183,8 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
         kiro: { name: 'Kiro', fn: runKiroAutomation },
         cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
-        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation }
+        tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
+        aerolink: { name: 'Aerolink', fn: runAerolinkAutomation }
     };
 
     console.log("");
@@ -299,7 +303,8 @@ async function main() {
                     kiro: { name: 'Kiro' },
                     cloudflare: { name: 'Cloudflare' },
                     codebuddy: { name: 'Codebuddy' },
-                    tokengo: { name: 'TokenGo' }
+                    tokengo: { name: 'TokenGo' },
+                    aerolink: { name: 'Aerolink' }
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -311,20 +316,22 @@ async function main() {
                             { 
                                 name: "Kiro Automation", 
                                 value: "kiro",
-                                checked: true
                             },
                             { 
                                 name: "Cloudflare Automation", 
                                 value: "cloudflare",
-                                checked: true
                             },
                             { 
                                 name: "Codebuddy Automation [BETA] (Requires Residential Proxy)", 
                                 value: "codebuddy"
                             },
-                            { 
-                                name: "TokenGo Automation (30-90s cooldown with proxy rotation)", 
+                            {
+                                name: "TokenGo Automation (30-90s cooldown with proxy rotation)",
                                 value: "tokengo",
+                            },
+                            {
+                                name: "Aerolink Automation",
+                                value: "aerolink",
                                 checked: true
                             },
                         ],
