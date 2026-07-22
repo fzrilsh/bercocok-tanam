@@ -26,11 +26,6 @@ const { printReport } = require("./reporter");
 const TARGET_URL = 'https://fzrilsh-9router-production.up.railway.app/dashboard/providers/grok-cli';
 const QUEUE_RETRY_DELAY_MS = 500;
 
-const ADD_SELECTOR =
-  'body > div.flex.h-screen.w-full.overflow-hidden.bg-bg > main > div.flex-1.overflow-y-auto.custom-scrollbar.p-6.lg\\:p-10 > div > div > div:nth-child(3) > div.mt-4.grid.grid-cols-1.gap-2.sm\\:flex > button';
-
-const CONFIRM_SELECTOR = "button[type='submit']";
-
 async function open9RouterSignIn(browser, page, log) {
     const config = getConfig();
 
@@ -41,10 +36,10 @@ async function open9RouterSignIn(browser, page, log) {
     });
 
     log("Clicking Add...");
-    await clickFirstVisibleSelector(page, [ADD_SELECTOR, "button.bg-primary:has-text('Add')"]);
+    await clickFirstVisibleSelector(page, ["button.bg-brand-500::-p-text(Add)"]);
 
     log("Waiting for xAI popup tab...");
-    await sleep(5000);
+    await sleep(2000);
 
     const pages = await browser.pages();
     const newTab = pages[pages.length - 1];
@@ -57,13 +52,13 @@ async function open9RouterSignIn(browser, page, log) {
 
     // Now we are at the Device Code screen (e.g. grok.com/device)
     log("Clicking Continue on Device Code page...");
-    await clickFirstVisibleSelector(newTab, [CONFIRM_SELECTOR, "button[type='submit']"]);
-    await sleep(3000);
+    await clickFirstVisibleSelector(newTab, ["button::-p-text(Continue)"]);
+    await sleep(1000);
 
     // Now we are at the Login Options screen
     log("Clicking Login with Google on xAI...");
-    await clickFirstVisibleSelector(newTab, ["::-p-text(Login with Google)", "button:has-text('Google')"]);
-    await sleep(3000);
+    await clickFirstVisibleSelector(newTab, ["button::-p-text(Login with Google)"]);
+    await sleep(1000);
 
     return newTab;
 }
@@ -82,13 +77,12 @@ async function handlePostLogin(page, log) {
     }
 
     log("Waiting for Grok redirect...");
-    await sleep(5000);
 
     try {
         log("Clicking Continue...");
         await clickFirstVisibleSelector(
             page,
-            ["button[type='submit']", "::-p-text(Continue)", "button:has-text('Continue')"],
+            ["button::-p-text(Continue)"],
             config.timeouts.short
         );
         await sleep(1000);
@@ -101,7 +95,7 @@ async function handlePostLogin(page, log) {
         await page.keyboard.press('End');
         await clickFirstVisibleSelector(
             page,
-            ["::-p-text(Allow)", "button:has-text('Allow')", "#submit_approve_access > div > button"],
+            ["button::-p-text(Allow)"],
             config.timeouts.short
         );
     } catch (_) {
