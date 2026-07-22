@@ -16,6 +16,11 @@ async function clickSelector(page, selector, options = {}) {
         delayBeforeClick = 0,
     } = options;
 
+    if (Array.isArray(selector)) {
+        await clickFirstVisibleSelector(page, selector, timeout);
+        return;
+    }
+
     await page.waitForSelector(selector, { timeout, visible });
 
     if (delayBeforeClick > 0) {

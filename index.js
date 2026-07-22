@@ -3,12 +3,13 @@ const ora = require("ora");
 const colors = require("ansi-colors");
 const { getConfig } = require("./src/config");
 const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
-const { runAntigravityAutomation } = require("./src/antigravity");
+const { runGrokCLIAutomation } = require("./src/GrokCLI");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
 const { runAerolinkAutomation } = require("./src/aerolink");
+const { runAntigravityAutomation } = require("./src/antigravity");
 const { openSettings } = require("./src/settings");
 const { closeAllActiveBrowsers } = require("./src/browser");
 const fs = require("fs");
@@ -78,6 +79,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runAerolinkAutomation();
         } else if (automationType === "antigravity") {
             result = await runAntigravityAutomation();
+        } else if (automationType === "grokCLI") {
+            result = await runGrokCLIAutomation();
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -188,7 +191,8 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
         tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
         aerolink: { name: 'Aerolink', fn: runAerolinkAutomation },
-        antigravity: { name: 'Antigravity', fn: runAntigravityAutomation }
+        antigravity: { name: 'Antigravity', fn: runAntigravityAutomation },
+        grokCLI: { name: 'GrokCLI', fn: runGrokCLIAutomation }
     };
 
     console.log("");
@@ -309,7 +313,8 @@ async function main() {
                     codebuddy: { name: 'Codebuddy' },
                     tokengo: { name: 'TokenGo' },
                     aerolink: { name: 'Aerolink' },
-                    antigravity: { name: 'Antigravity' }
+                    antigravity: { name: 'Antigravity' },
+                    grokCLI: { name: 'GrokCLI' }
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -339,8 +344,12 @@ async function main() {
                                 value: "aerolink",
                             },
                             {
-                                name: "Antigravity Automation (9Router)",
+                                name: "Antigravity Automation",
                                 value: "antigravity",
+                            },
+                            {
+                                name: "Grok CLI Automation",
+                                value: "grokCLI",
                                 checked: true
                             },
                         ],

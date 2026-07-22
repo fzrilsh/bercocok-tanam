@@ -33,7 +33,10 @@ const DEFAULT_BROWSER_ARGS_SETS = [
 
 const SHARED_SELECTORS = {
     googleSignIn: "::-p-text(Google)",
-    iUnderstand: "::-p-text(I understand)",
+    iUnderstand: [
+        "::-p-text(I understand)",
+        "::-p-text(Saya mengerti)"
+    ],
     loginOptions: [
         "::-p-text(Allow)",
         "::-p-text(Continue)",
