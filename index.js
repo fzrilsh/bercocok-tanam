@@ -3,6 +3,7 @@ const ora = require("ora");
 const colors = require("ansi-colors");
 const { getConfig } = require("./src/config");
 const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
+const { runAntigravityAutomation } = require("./src/antigravity");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation } = require("./src/codebuddy");
@@ -75,6 +76,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runTokenGoAutomation();
         } else if (automationType === "aerolink") {
             result = await runAerolinkAutomation();
+        } else if (automationType === "antigravity") {
+            result = await runAntigravityAutomation();
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -184,7 +187,8 @@ async function runSelectedAutomations(selectedAutomations, proxySettings) {
         cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
         tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
-        aerolink: { name: 'Aerolink', fn: runAerolinkAutomation }
+        aerolink: { name: 'Aerolink', fn: runAerolinkAutomation },
+        antigravity: { name: 'Antigravity', fn: runAntigravityAutomation }
     };
 
     console.log("");
@@ -304,7 +308,8 @@ async function main() {
                     cloudflare: { name: 'Cloudflare' },
                     codebuddy: { name: 'Codebuddy' },
                     tokengo: { name: 'TokenGo' },
-                    aerolink: { name: 'Aerolink' }
+                    aerolink: { name: 'Aerolink' },
+                    antigravity: { name: 'Antigravity' }
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -332,6 +337,10 @@ async function main() {
                             {
                                 name: "Aerolink Automation",
                                 value: "aerolink",
+                            },
+                            {
+                                name: "Antigravity Automation (9Router)",
+                                value: "antigravity",
                                 checked: true
                             },
                         ],
