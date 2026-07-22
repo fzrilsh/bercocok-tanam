@@ -121,7 +121,7 @@ async function processAntigravityAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser for ${account.email}`);
+    log(`Launching browser`);
 
     // Pass false to match old behavior where headless was forced off,
     // or let it use config.headless if you prefer. Leaving as config.headless to match standard project behavior.

@@ -1,5 +1,6 @@
 node_modules/
-.env
+
+
 logs/
 accounts.txt
 *_keys.txt

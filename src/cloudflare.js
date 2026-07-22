@@ -380,7 +380,7 @@ async function processCFAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser for ${account.email}`);
+    log(`Launching browser`);
 
     const { browser, page } = await launchBrowser(
         browserArgsIndex,

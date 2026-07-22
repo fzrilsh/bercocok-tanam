@@ -452,7 +452,7 @@ async function processCodebuddyAccount(
     const deviceCodeData = await getCodebuddyDeviceCode(config.routerUrl, log);
     const { device_code, verification_uri, codeVerifier } = deviceCodeData;
 
-    log(`Launching browser for ${account.email}`);
+    log(`Launching browser`);
     const { browser, page, proxy: conditionalProxy } = await launchBrowser(
         browserArgsIndex,
         workerIndex,
