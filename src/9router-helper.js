@@ -1,12 +1,11 @@
 const { getConfig } = require('./config');
 
-const ROUTER9_PROVIDER = 'grok-cli';
-
 class NineRouter {
-    constructor(baseUrl, password) {
+    constructor(baseUrl, password, provider = null) {
         this.base = (baseUrl || '').replace(/\/$/, '');
         this.password = password || '';
         this.cookie = '';
+        this.provider = provider;
     }
 
     async req(method, path, body = undefined) {
@@ -66,21 +65,23 @@ class NineRouter {
         return data.connections || data || [];
     }
 
-    async deviceCode() {
-        return this.req('GET', `/api/oauth/${ROUTER9_PROVIDER}/device-code`);
+    async deviceCode(provider = this.provider) {
+        return this.req('GET', `/api/oauth/${provider}/device-code`);
     }
 
-    async poll(deviceCode, codeVerifier) {
+    async poll(deviceCode, codeVerifier, provider = this.provider) {
         try {
-            const data = await this.req('POST', `/api/oauth/${ROUTER9_PROVIDER}/poll`, {
+            const data = await this.req('POST', `/api/oauth/${provider}/poll`, {
                 deviceCode,
                 codeVerifier,
+                extraData: null,
             });
             return {
                 success: !!data.success,
                 pending: !!data.pending,
                 error: data.error,
                 errorDescription: data.errorDescription,
+                data,
             };
         } catch (e) {
             const d = e?.data;
@@ -93,6 +94,50 @@ class NineRouter {
                 error: d?.error || e?.message || String(e),
             };
         }
+    }
+
+    async importProvider(provider, name, apiKey, extraData = {}, options = {}) {
+        const body = {
+            provider,
+            name,
+            apiKey,
+            priority: options.priority ?? 1,
+            proxyPoolId: options.proxyPoolId ?? null,
+            testStatus: options.testStatus ?? 'active',
+            ...extraData,
+        };
+        return this.req('POST', '/api/providers', body);
+    }
+
+    async importRefreshToken(provider, refreshToken) {
+        return this.req('POST', `/api/oauth/${provider}/import`, { refreshToken });
+    }
+
+    async validateProvider(provider, apiKey, extraData = {}) {
+        const body = {
+            provider,
+            apiKey,
+            providerSpecificData: extraData,
+        };
+        return this.req('POST', '/api/providers/validate', body);
+    }
+
+    async ensureProviderNode(name, prefix, apiType, baseUrl, type) {
+        const data = await this.req('GET', '/api/provider-nodes');
+        const nodes = data.nodes || data;
+        const existing = Array.isArray(nodes)
+            ? nodes.find((n) => n.prefix === prefix)
+            : null;
+        if (existing) return existing.id;
+
+        const created = await this.req('POST', '/api/provider-nodes', {
+            name,
+            prefix,
+            apiType,
+            baseUrl,
+            type,
+        });
+        return created.id || created.node?.id;
     }
 }
 
@@ -179,7 +224,7 @@ async function clearBrowserCookies(browser) {
     await client.send('Network.clearBrowserCookies');
 }
 
-async function addAccountToRouter(accountData, browser, log) {
+async function addAccountToRouter(accountData, browser, log, provider = 'grok-cli') {
     const config = getConfig();
     const routerUrl = config.routerUrl || process.env.ROUTER9_URL || process.env.ROUTER_URL;
     const routerPass = config.routerPassword || process.env.ROUTER9_PASS || process.env.ROUTER_PASS || process.env.ROUTER_PASSWORD;
@@ -190,7 +235,7 @@ async function addAccountToRouter(accountData, browser, log) {
     }
 
     log('[9Router] Starting OAuth device flow...');
-    const r9 = new NineRouter(routerUrl, routerPass);
+    const r9 = new NineRouter(routerUrl, routerPass, provider);
 
     try {
         log('[9Router] Logging in...');
@@ -210,7 +255,7 @@ async function addAccountToRouter(accountData, browser, log) {
         const conns = await r9.listProviders();
         const existing = new Set(
             conns
-                .filter((c) => c.provider === ROUTER9_PROVIDER)
+                .filter((c) => c.provider === provider)
                 .map((c) => c.email)
                 .filter(Boolean)
         );
@@ -219,7 +264,7 @@ async function addAccountToRouter(accountData, browser, log) {
             log(`[9Router] ${accountData.email} already exists, skipping`);
             return { success: true, skipped: true, reason: 'already exists' };
         }
-        log(`[9Router] ${existing.size} existing grok-cli connections`);
+        log(`[9Router] ${existing.size} existing ${provider} connections`);
     } catch (e) {
         log(`[9Router] List providers error: ${e.message}`);
         return { success: false, error: 'list providers failed' };
@@ -327,8 +372,26 @@ async function addAccountToRouter(accountData, browser, log) {
     }
 }
 
+async function createRouter(provider = null, log = () => {}) {
+    const config = getConfig();
+    const routerUrl = config.routerUrl || process.env.ROUTER9_URL || process.env.ROUTER_URL;
+    const routerPass = config.routerPassword || process.env.ROUTER9_PASS || process.env.ROUTER_PASS || process.env.ROUTER_PASSWORD;
+
+    if (!routerUrl || !routerPass) {
+        return { ok: false, error: 'not configured' };
+    }
+
+    const r9 = new NineRouter(routerUrl, routerPass, provider);
+    if (!(await r9.login())) {
+        return { ok: false, error: 'login failed' };
+    }
+    log('[9Router] Login success');
+    return { ok: true, router: r9 };
+}
+
 module.exports = {
     NineRouter,
+    createRouter,
     addAccountToRouter,
     expandSsoCookies,
 };

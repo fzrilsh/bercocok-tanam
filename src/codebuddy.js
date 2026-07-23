@@ -20,6 +20,7 @@ const { clickSelector } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
 const { waitForGitHubDeviceOTP } = require("./temp-email-helper");
+const { createRouter } = require("./9router-helper");
 
 const QUEUE_RETRY_DELAY_MS = 500;
 const ROOT_DIR = path.resolve(__dirname, "..");
@@ -118,33 +119,17 @@ function removeCodebuddyAccount(account) {
     fs.writeFileSync(filePath, remaining.join("\n"));
 }
 
-async function getCodebuddyDeviceCode(routerUrl, log) {
-    const baseUrl = routerUrl.replace(/\/$/, "");
-    const url = `${baseUrl}/api/oauth/codebuddy-int/device-code`;
+async function getCodebuddyDeviceCode(log) {
+    const { ok, router, error } = await createRouter("codebuddy-int", log);
+    if (!ok) throw new Error(`Router ${error}`);
 
-    log(`[API] Requesting device code from ${url}`);
-
-    try {
-        const response = await axios.get(url, {
-            headers: {
-                Accept: "*/*",
-                "User-Agent":
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-            },
-        });
-
-        log(`[API] Device code received: ${response.data.device_code}`);
-        return response.data;
-    } catch (error) {
-        log(`[API] Error getting device code: ${error.message}`);
-        throw new Error(`Failed to get device code: ${error.message}`);
-    }
+    log("[API] Requesting device code from router...");
+    const data = await router.deviceCode();
+    log(`[API] Device code received: ${data.device_code}`);
+    return { ...data, _router: router };
 }
 
-async function pollCodebuddyCompletion(routerUrl, deviceCode, codeVerifier, log) {
-    const baseUrl = routerUrl.replace(/\/$/, "");
-    const url = `${baseUrl}/api/oauth/codebuddy-int/poll`;
-
+async function pollCodebuddyCompletion(router, deviceCode, codeVerifier, log) {
     const startTime = Date.now();
     const timeout = 120000;
     const pollInterval = 500;
@@ -152,32 +137,14 @@ async function pollCodebuddyCompletion(routerUrl, deviceCode, codeVerifier, log)
     log(`[API] Starting polling for device code: ${deviceCode}`);
 
     while (Date.now() - startTime < timeout) {
-        try {
-            const response = await axios.post(
-                url,
-                {
-                    deviceCode,
-                    codeVerifier,
-                    extraData: null,
-                },
-                {
-                    headers: {
-                        Accept: "*/*",
-                        "Content-Type": "application/json",
-                        "User-Agent":
-                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-                    },
-                },
-            );
+        const res = await router.poll(deviceCode, codeVerifier);
+        if (res.success) {
+            log(`[API] Polling successful!`);
+            return res.data;
+        }
 
-            if (response.data.success === true) {
-                log(`[API] Polling successful! Connection ID: ${response.data.connection.id}`);
-                return response.data;
-            }
-
-            log(`[API] Polling... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
-        } catch (error) {
-            log(`[API] Polling error: ${error.message}`);
+        if (!res.pending) {
+            log(`[API] Polling error: ${res.error}`);
         }
 
         await sleep(pollInterval);
@@ -956,8 +923,8 @@ async function processCodebuddyAccount(
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
 
     log(`Getting device code from router API...`);
-    const deviceCodeData = await getCodebuddyDeviceCode(config.routerUrl, log);
-    const { device_code, verification_uri, codeVerifier } = deviceCodeData;
+    const deviceCodeData = await getCodebuddyDeviceCode(log);
+    const { device_code, verification_uri, codeVerifier, _router: router } = deviceCodeData;
 
     log(`Launching browser for ${account.email}`);
     const { browser, page, proxy: conditionalProxy } = await launchBrowser(
@@ -985,7 +952,7 @@ async function processCodebuddyAccount(
     try {
         // Start poll early (same as previous working flow)
         const pollingPromise = pollCodebuddyCompletion(
-            config.routerUrl,
+            router,
             device_code,
             codeVerifier,
             log,

@@ -22,6 +22,7 @@ const {
 } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
+const { createRouter } = require("./9router-helper");
 const fs = require("fs");
 
 const TARGET_URL = "https://dash.cloudflare.com/login";
@@ -232,89 +233,27 @@ function saveToken(accountId, token, log) {
     log(`Token saved to ${resultFile}`);
 }
 
-async function validateProvider(apiKey, accountId, log) {
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    const apiUrl = `${baseUrl}/api/providers/validate`;
-
-    log("Validating provider...");
-
-    const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-        },
-        body: JSON.stringify({
-            provider: "cloudflare-ai",
-            apiKey,
-            providerSpecificData: { accountId },
-        }),
-    });
-
-    const text = await response.text();
-    let data;
+async function validateAndImport(apiKey, accountId, log) {
+    const { ok, router, error } = await createRouter(null, log);
+    if (!ok) throw new Error(`Router ${error}`);
 
     try {
-        data = JSON.parse(text);
-    } catch (_) {
-        throw new Error(`Invalid JSON from validate: ${text.substring(0, 100)}`);
+        log("Validating provider...");
+        await router.validateProvider("cloudflare-ai", apiKey, { accountId });
+        log("Validation OK");
+    } catch (valErr) {
+        log(`Validation warning (continuing): ${valErr.message}`);
     }
 
-    if (!response.ok) {
-        throw new Error(
-            `Validate error ${response.status}: ${data.error || JSON.stringify(data)}`,
-        );
-    }
-
-    log("Validation OK");
-
-    return data;
-}
-
-async function importToRouter(apiKey, accountId, log) {
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    const apiUrl = `${baseUrl}/api/providers`;
     const connectionName = `cloudflare_${accountId.slice(0, 6)}`;
-
     log(`Importing as "${connectionName}"...`);
-
-    const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-        },
-        body: JSON.stringify({
-            provider: "cloudflare-ai",
-            name: connectionName,
-            apiKey,
-            priority: 1,
-            proxyPoolId: null,
-            testStatus: "active",
-            providerSpecificData: { accountId },
-        }),
-    });
-
-    const text = await response.text();
-    let data;
-
-    try {
-        data = JSON.parse(text);
-    } catch (_) {
-        throw new Error(`Invalid JSON from import: ${text.substring(0, 100)}`);
-    }
-
-    if (!response.ok) {
-        throw new Error(
-            `Import error ${response.status}: ${data.error || JSON.stringify(data)}`,
-        );
-    }
-
+    await router.importProvider(
+        "cloudflare-ai",
+        connectionName,
+        apiKey,
+        { providerSpecificData: { accountId } },
+    );
     log("Successfully imported!");
-
-    return data;
 }
 
 async function processCFAccount(
@@ -359,16 +298,8 @@ async function processCFAccount(
         saveToken(accountId, token, log);
 
         updateProgress({ step: STEPS.VALIDATING });
-
         try {
-            await validateProvider(token, accountId, log);
-        } catch (valErr) {
-            log(`Validation warning (continuing): ${valErr.message}`);
-        }
-
-        updateProgress({ step: STEPS.IMPORTING_CF });
-        try {
-            await importToRouter(token, accountId, log);
+            await validateAndImport(token, accountId, log);
         } catch (importErr) {
             log(`Router import failed (continuing): ${importErr.message}`);
         }

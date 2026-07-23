@@ -23,6 +23,7 @@ const {
 } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
+const { createRouter } = require("./9router-helper");
 
 const TARGET_URL = "https://app.kiro.dev/signin/";
 const QUEUE_RETRY_DELAY_MS = 500; // Wait before retrying locked account from queue
@@ -122,36 +123,13 @@ function saveRefreshToken(email, refreshToken, log) {
 }
 
 async function importRefreshToken(refreshToken, log) {
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    const apiUrl = `${baseUrl}/api/oauth/kiro/import`;
-
-    log(`Importing refresh token to ${apiUrl}...`);
-
-    const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-        },
-        body: JSON.stringify({ refreshToken }),
-    });
-
-    const text = await response.text();
-    let data;
-
-    try {
-        data = JSON.parse(text);
-    } catch (_) {
-        throw new Error(`Invalid JSON response: ${text.substring(0, 100)}`);
+    const { ok, router, error } = await createRouter(null, log);
+    if (!ok) {
+        throw new Error(`Router ${error}`);
     }
 
-    if (!response.ok) {
-        throw new Error(
-            `API Error ${response.status}: ${data.error || JSON.stringify(data)}`,
-        );
-    }
-
+    log("Importing refresh token to router...");
+    await router.importRefreshToken("kiro", refreshToken);
     log("Successfully imported token!");
 }
 
