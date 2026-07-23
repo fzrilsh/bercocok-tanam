@@ -170,6 +170,13 @@ async function sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function clearBrowserCookies(browser) {
+    const pages = await browser.pages();
+    const page = pages.length > 0 ? pages[0] : await browser.newPage();
+    const client = await page.createCDPSession();
+    await client.send('Network.clearBrowserCookies');
+}
+
 async function addAccountToRouter(accountData, browser, log) {
     const config = getConfig();
     const routerUrl = config.routerUrl || process.env.ROUTER9_URL || process.env.ROUTER_URL;
@@ -217,6 +224,9 @@ async function addAccountToRouter(accountData, browser, log) {
     }
 
     try {
+        log('[9Router] Clearing browser cookies...');
+        await clearBrowserCookies(browser);
+        
         const page = await browser.newPage();
 
         const cookies = expandSsoCookies(accountData.sso_cookies || []);
