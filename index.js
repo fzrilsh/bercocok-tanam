@@ -8,6 +8,7 @@ const { runCloudflareAutomation } = require("./src/cloudflare");
 const { runCodebuddyAutomation, runCodebuddyCreateAndImport } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
 const { runGitHubSignupAutomation, checkPythonAvailable } = require("./src/github-signup-python");
+const { runGrokAutomation } = require("./src/grok");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
 const retryDir = './retryAccounts';
@@ -55,6 +56,29 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             }
         } else {
             console.log(`Skipped retry for ${failedAccountsList.length} failed GitHub account(s).\n`);
+        }
+        return;
+    }
+
+    if (automationType === 'grok') {
+        const { retry } = await inquirer.prompt([
+            {
+                type: "confirm",
+                name: "retry",
+                message: `${failedAccountsList.length} Grok account(s) failed to create. Retry creating ${failedAccountsList.length} more account(s)?`,
+                default: true,
+            },
+        ]);
+
+        if (retry) {
+            console.log(`\nRetrying Grok signup for ${failedAccountsList.length} account(s)...\n`);
+            const result = await runGrokAutomation(failedAccountsList.length, null, true);
+            
+            if (result && result.successCount > 0) {
+                console.log(`✅ Successfully created ${result.successCount} Grok account(s)!\n`);
+            }
+        } else {
+            console.log(`Skipped retry for ${failedAccountsList.length} failed Grok account(s).\n`);
         }
         return;
     }
@@ -211,6 +235,8 @@ async function runSelectedAutomations(
     proxySettings,
     githubAccountCount = 1,
     githubTempEmailProvider = null,
+    grokAccountCount = 1,
+    grokTempEmailProvider = null,
     codebuddyOptions = null,
 ) {
     const { createProgressManager } = require("./src/progress");
@@ -220,7 +246,8 @@ async function runSelectedAutomations(
         cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
         tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
-        github: { name: 'GitHub Signup', fn: runGitHubSignupAutomation }
+        github: { name: 'GitHub Signup', fn: runGitHubSignupAutomation },
+        grok: { name: 'Grok Signup', fn: runGrokAutomation }
     };
 
     console.log("");
@@ -258,6 +285,9 @@ async function runSelectedAutomations(
     const promises = selectedAutomations.map(type => {
         if (type === 'github') {
             return automationMap[type].fn(githubAccountCount, sharedProgress, proxySettings[type], githubTempEmailProvider);
+        }
+        if (type === 'grok') {
+            return automationMap[type].fn(grokAccountCount, sharedProgress, proxySettings[type], grokTempEmailProvider);
         }
         if (type === 'codebuddy') {
             // Create mode: each GitHub success immediately runs Codebuddy OAuth
@@ -356,7 +386,8 @@ async function main() {
                     cloudflare: { name: 'Cloudflare' },
                     codebuddy: { name: 'Codebuddy' },
                     tokengo: { name: 'TokenGo' },
-                    github: { name: 'GitHub Signup' }
+                    github: { name: 'GitHub Signup' },
+                    grok: { name: 'Grok Signup' }
                 };
 
                 const { selected } = await inquirer.prompt([
@@ -388,6 +419,10 @@ async function main() {
                                 name: "GitHub Signup (Create new GitHub accounts)", 
                                 value: "github"
                             },
+                            { 
+                                name: "Grok Signup (Create new Grok/x.ai accounts)", 
+                                value: "grok"
+                            },
                         ],
                         // No validation - allow empty selection to go back
                     },
@@ -396,6 +431,8 @@ async function main() {
                 if (selected.length > 0) {
                     let githubAccountCount = 1;
                     let githubTempEmailProvider = null;
+                    let grokAccountCount = 1;
+                    let grokTempEmailProvider = null;
                     let codebuddyOptions = null;
                     
                     if (selected.includes('github')) {
@@ -428,6 +465,38 @@ async function main() {
                             },
                         ]);
                         githubTempEmailProvider = providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers);
+                    }
+
+                    if (selected.includes('grok')) {
+                        const { count } = await inquirer.prompt([
+                            {
+                                type: "input",
+                                name: "count",
+                                message: "How many Grok accounts to create?",
+                                default: "1",
+                                validate: (input) => {
+                                    const num = parseInt(input);
+                                    if (isNaN(num) || num <= 0) {
+                                        return "Please enter a valid positive number";
+                                    }
+                                    return true;
+                                }
+                            }
+                        ]);
+                        grokAccountCount = parseInt(count);
+
+                        const { providers } = await inquirer.prompt([
+                            {
+                                type: "checkbox",
+                                name: "providers",
+                                message: "Select temp email providers for Grok signup (auto = random from selected):",
+                                choices: [
+                                    { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
+                                    { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                ],
+                            },
+                        ]);
+                        grokTempEmailProvider = providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers);
                     }
 
                     if (selected.includes("codebuddy")) {
@@ -536,6 +605,8 @@ async function main() {
                         proxySettings,
                         githubAccountCount,
                         githubTempEmailProvider,
+                        grokAccountCount,
+                        grokTempEmailProvider,
                         codebuddyOptions,
                     );
                 }
