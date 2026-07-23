@@ -113,6 +113,37 @@ function parseBrowserArgsSets(value) {
     }
 }
 
+function parseTempEmailProvider(value) {
+    if (!value) {
+        return "auto";
+    }
+
+    // Try to parse as JSON array
+    if (value.startsWith("[")) {
+        try {
+            const parsed = JSON.parse(value);
+            if (!Array.isArray(parsed) || parsed.length === 0) {
+                throw new Error("TEMP_EMAIL_PROVIDER array must be non-empty");
+            }
+            const validProviders = ["ncaori", "1secemail"];
+            const invalidProviders = parsed.filter(p => !validProviders.includes(p));
+            if (invalidProviders.length > 0) {
+                throw new Error(`Invalid providers: ${invalidProviders.join(", ")}. Use "ncaori" or "1secemail"`);
+            }
+            return parsed;
+        } catch (error) {
+            throw new Error(`Invalid TEMP_EMAIL_PROVIDER array: ${error.message}`);
+        }
+    }
+
+    // Single provider string
+    const validProviders = ["auto", "ncaori", "1secemail"];
+    if (!validProviders.includes(value)) {
+        throw new Error(`Invalid TEMP_EMAIL_PROVIDER: ${value}. Use "auto", "ncaori", "1secemail", or array like ["ncaori", "1secemail"]`);
+    }
+    return value;
+}
+
 function createConfig() {
     const env = { ...loadEnvFile(ENV_PATH), ...process.env };
 
@@ -133,6 +164,7 @@ function createConfig() {
         ),
         proxyPoolFile: env.PROXY_POOL_FILE ? path.resolve(ROOT_DIR, env.PROXY_POOL_FILE) : null,
         browserArgsSets: parseBrowserArgsSets(env.BROWSER_ARGS_SETS),
+        tempEmailProvider: parseTempEmailProvider(env.TEMP_EMAIL_PROVIDER),
         delays: {
             beforeNextClick: toPositiveNumber(env.DELAY_BEFORE_NEXT_CLICK_MS, 1000),
             betweenAccounts: toPositiveNumber(env.DELAY_BETWEEN_ACCOUNTS_MS, 3000),

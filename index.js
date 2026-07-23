@@ -5,12 +5,22 @@ const { getConfig } = require("./src/config");
 const { readAccounts, formatDuration, readProxyPool } = require("./src/utils");
 const { runKiroAutomation } = require("./src/kiro");
 const { runCloudflareAutomation } = require("./src/cloudflare");
-const { runCodebuddyAutomation } = require("./src/codebuddy");
+const { runCodebuddyAutomation, runCodebuddyCreateAndImport } = require("./src/codebuddy");
 const { runTokenGoAutomation } = require("./src/tokengo");
 const { runGitHubSignupAutomation, checkPythonAvailable } = require("./src/github-signup-python");
 const { openSettings } = require("./src/settings");
 const fs = require("fs");
 const retryDir = './retryAccounts';
+
+function countGithubKeys() {
+    const keysPath = path.join(__dirname, "github_keys.txt");
+    if (!fs.existsSync(keysPath)) return 0;
+    return fs
+        .readFileSync(keysPath, "utf-8")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter((l) => l && !l.startsWith("#") && l.includes(":")).length;
+}
 
 async function waitForEnter() {
     const inquirer = (await import("inquirer")).default;
@@ -196,7 +206,13 @@ function displayInfoPanel() {
     console.log("");
 }
 
-async function runSelectedAutomations(selectedAutomations, proxySettings, githubAccountCount = 1) {
+async function runSelectedAutomations(
+    selectedAutomations,
+    proxySettings,
+    githubAccountCount = 1,
+    githubTempEmailProvider = null,
+    codebuddyOptions = null,
+) {
     const { createProgressManager } = require("./src/progress");
     
     const automationMap = {
@@ -220,7 +236,7 @@ async function runSelectedAutomations(selectedAutomations, proxySettings, github
 
     if (selectedAutomations.includes('codebuddy')) {
         console.log("");
-        spinner.warn(colors.yellow("NOTE: Codebuddy (BETA) requires residential proxies to avoid account restrictions."));
+        spinner.warn(colors.yellow("NOTE: Codebuddy uses GitHub OAuth. Residential proxy recommended."));
     }
     
     if (selectedAutomations.includes('tokengo')) {
@@ -241,7 +257,20 @@ async function runSelectedAutomations(selectedAutomations, proxySettings, github
     // Run selected automations in parallel
     const promises = selectedAutomations.map(type => {
         if (type === 'github') {
-            return automationMap[type].fn(githubAccountCount, sharedProgress, proxySettings[type]);
+            return automationMap[type].fn(githubAccountCount, sharedProgress, proxySettings[type], githubTempEmailProvider);
+        }
+        if (type === 'codebuddy') {
+            // Create mode: each GitHub success immediately runs Codebuddy OAuth
+            if (codebuddyOptions && codebuddyOptions.mode === 'create') {
+                return runCodebuddyCreateAndImport(
+                    codebuddyOptions.createCount || 1,
+                    sharedProgress,
+                    proxySettings.codebuddy,
+                    codebuddyOptions.tempEmailProvider,
+                );
+            }
+            // Existing mode: use github_keys.txt
+            return automationMap[type].fn(sharedProgress, proxySettings[type]);
         }
         return automationMap[type].fn(sharedProgress, proxySettings[type]);
     });
@@ -366,6 +395,8 @@ async function main() {
 
                 if (selected.length > 0) {
                     let githubAccountCount = 1;
+                    let githubTempEmailProvider = null;
+                    let codebuddyOptions = null;
                     
                     if (selected.includes('github')) {
                         const { count } = await inquirer.prompt([
@@ -384,6 +415,82 @@ async function main() {
                             }
                         ]);
                         githubAccountCount = parseInt(count);
+
+                        const { providers } = await inquirer.prompt([
+                            {
+                                type: "checkbox",
+                                name: "providers",
+                                message: "Select temp email providers (auto = random from selected):",
+                                choices: [
+                                    { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
+                                    { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                ],
+                            },
+                        ]);
+                        githubTempEmailProvider = providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers);
+                    }
+
+                    if (selected.includes("codebuddy")) {
+                        const existingCount = countGithubKeys();
+                        const choices = [
+                            {
+                                name: `Use existing github_keys.txt (${existingCount} account${existingCount === 1 ? "" : "s"})`,
+                                value: "existing",
+                                disabled: existingCount === 0 ? "file empty / not found" : false,
+                            },
+                            {
+                                name: "Create GitHub account then immediately login Codebuddy (per account)",
+                                value: "create",
+                            },
+                        ];
+
+                        const { codebuddyMode } = await inquirer.prompt([
+                            {
+                                type: "list",
+                                name: "codebuddyMode",
+                                message: "Codebuddy account source:",
+                                choices,
+                                default: existingCount > 0 ? "existing" : "create",
+                            },
+                        ]);
+
+                        if (codebuddyMode === "create") {
+                            const { createCount } = await inquirer.prompt([
+                                {
+                                    type: "input",
+                                    name: "createCount",
+                                    message: "How many accounts to create + import to Codebuddy?",
+                                    default: "1",
+                                    validate: (input) => {
+                                        const num = parseInt(input);
+                                        if (isNaN(num) || num <= 0) {
+                                            return "Please enter a valid positive number";
+                                        }
+                                        return true;
+                                    },
+                                },
+                            ]);
+
+                            const { providers } = await inquirer.prompt([
+                                {
+                                    type: "checkbox",
+                                    name: "providers",
+                                    message: "Select temp email providers for GitHub signup (auto = random from selected):",
+                                    choices: [
+                                        { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
+                                        { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                    ],
+                                },
+                            ]);
+
+                            codebuddyOptions = {
+                                mode: "create",
+                                createCount: parseInt(createCount),
+                                tempEmailProvider: providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers),
+                            };
+                        } else {
+                            codebuddyOptions = { mode: "existing" };
+                        }
                     }
                     
                     const proxies = readProxyPool();
@@ -417,13 +524,20 @@ async function main() {
                                 proxySettings[type] = withProxy.includes(type);
                             });
                         }
+
                     } else {
                         selected.forEach(type => {
                             proxySettings[type] = false;
                         });
                     }
 
-                    await runSelectedAutomations(selected, proxySettings, githubAccountCount);
+                    await runSelectedAutomations(
+                        selected,
+                        proxySettings,
+                        githubAccountCount,
+                        githubTempEmailProvider,
+                        codebuddyOptions,
+                    );
                 }
                 // If selection is empty, just continue loop (back to main menu)
                 break;

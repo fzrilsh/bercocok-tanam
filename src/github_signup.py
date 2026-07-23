@@ -27,8 +27,11 @@ WARM_COOKIES_FILE = 'warm_cookies.json'
 
 
 class TempEmail:
-    def __init__(self, email):
+    def __init__(self, email, provider, csrf_token=None, cookies=None):
         self.email = email
+        self.provider = provider
+        self.csrf_token = csrf_token
+        self.cookies = cookies
         self.session = requests.Session()
     
     def get_random_user_agent(self):
@@ -40,8 +43,16 @@ class TempEmail:
         return random.choice(user_agents)
     
     def wait_for_github_otp(self, max_attempts=30):
-        print("Waiting for GitHub OTP email...")
+        print(f"Waiting for GitHub OTP email ({self.provider})...")
         
+        if self.provider == "ncaori":
+            return self._wait_for_github_otp_ncaori(max_attempts)
+        elif self.provider == "1secemail":
+            return self._wait_for_github_otp_secemail(max_attempts)
+        else:
+            raise Exception(f"Unknown provider: {self.provider}")
+    
+    def _wait_for_github_otp_ncaori(self, max_attempts):
         user_agent = self.get_random_user_agent()
         
         headers = {
@@ -93,6 +104,63 @@ class TempEmail:
                             if plain_otp_match:
                                 otp_code = plain_otp_match.group(1)
                                 print(f"GitHub OTP code received (plain): {otp_code}")
+                                return otp_code
+            except Exception as e:
+                print(f"Error checking emails: {e}")
+            
+            time.sleep(5)
+        
+        raise Exception("GitHub OTP code not received within timeout")
+    
+    def _wait_for_github_otp_secemail(self, max_attempts):
+        if not self.csrf_token or not self.cookies:
+            raise Exception("1secemail provider requires csrf_token and cookies")
+        
+        user_agent = self.get_random_user_agent()
+        
+        headers = {
+            'accept': 'application/json, text/plain, */*',
+            'accept-language': 'en-US,en;q=0.5',
+            'cache-control': 'no-cache',
+            'content-type': 'application/json',
+            'cookie': self.cookies,
+            'origin': 'https://www.1secemail.com',
+            'pragma': 'no-cache',
+            'referer': 'https://www.1secemail.com/',
+            'sec-ch-ua': '"Not;A=Brand";v="8", "Chromium";v="150", "Brave";v="150"',
+            'sec-ch-ua-mobile': '?0',
+            'sec-ch-ua-platform': '"macOS"',
+            'sec-fetch-dest': 'empty',
+            'sec-fetch-mode': 'cors',
+            'sec-fetch-site': 'same-origin',
+            'sec-gpc': '1',
+            'user-agent': user_agent
+        }
+        
+        for attempt in range(1, max_attempts + 1):
+            print(f"Checking for GitHub OTP (attempt {attempt}/{max_attempts})...")
+            
+            try:
+                response = self.session.post(
+                    'https://www.1secemail.com/get_messages',
+                    headers=headers,
+                    json={'_token': self.csrf_token}
+                )
+                
+                data = response.json()
+                
+                if data.get('messages') and len(data['messages']) > 0:
+                    for email_msg in data['messages']:
+                        from_email = email_msg.get('from_email', '')
+                        subject = email_msg.get('subject', '')
+                        
+                        if from_email == 'noreply@github.com' and subject and 'launch code' in subject.lower():
+                            content = email_msg.get('content', '')
+                            
+                            otp_match = re.search(r'<span class="f00-light text-gray-dark sans-serif text-semibold"[^>]*>(\d{8})</span>', content)
+                            if otp_match:
+                                otp_code = otp_match.group(1)
+                                print(f"GitHub OTP code received: {otp_code}")
                                 return otp_code
             except Exception as e:
                 print(f"Error checking emails: {e}")
@@ -596,7 +664,7 @@ chrome.webRequest.onAuthRequired.addListener(
         self.sleep(3, 5)
         
         print("  ├─ Checking for bot detection challenges...")
-        self.wait_for_github_challenge(60)
+        self.wait_for_github_challenge(20)
         
         print("  ├─ Checking for cookie consent popup...")
         self.accept_cookies()
@@ -617,7 +685,7 @@ chrome.webRequest.onAuthRequired.addListener(
         print(f"  ├─ [EMAIL] Typing: {email}")
         for char in email:
             email_input.send_keys(char)
-            self.sleep(0.05, 0.15)
+            self.sleep(0.01, 0.5)
         print(f"  ├─ [EMAIL] ✅ Email entered")
         
         self.sleep(1, 1.5)
@@ -635,7 +703,7 @@ chrome.webRequest.onAuthRequired.addListener(
         print(f"  ├─ [PASSWORD] Typing password ({len(password)} characters)...")
         for char in password:
             password_input.send_keys(char)
-            self.sleep(0.05, 0.15)
+            self.sleep(0.01, 0.05)
         print(f"  ├─ [PASSWORD] ✅ Password entered")
         
         self.sleep(1, 1.5)
@@ -653,7 +721,7 @@ chrome.webRequest.onAuthRequired.addListener(
         print(f"  ├─ [USERNAME] Typing: {username}")
         for char in username:
             username_input.send_keys(char)
-            self.sleep(0.05, 0.15)
+            self.sleep(0.01, 0.05)
         print(f"  ├─ [USERNAME] ✅ Username entered")
         
         self.sleep(1, 1.5)
@@ -764,7 +832,7 @@ chrome.webRequest.onAuthRequired.addListener(
             )
             self.sleep(0.1, 0.3)
             input_field.click()
-            self.sleep(0.05, 0.15)
+            self.sleep(0.01, 0.05)
             input_field.send_keys(digits[i])
             self.sleep(0.2, 0.5)
         
@@ -807,14 +875,15 @@ def generate_password():
     return password
 
 
-def create_github_account(email, headless=False, proxy=None, chrome_binary=None):
-    temp_email = TempEmail(email)
+def create_github_account(email, provider, csrf_token=None, cookies=None, headless=False, proxy=None, chrome_binary=None):
+    temp_email = TempEmail(email, provider, csrf_token, cookies)
     
     username = temp_email.email.split('@')[0]
     password = generate_password()
     
     print(f"\nAccount Details:")
     print(f"Email: {temp_email.email}")
+    print(f"Provider: {temp_email.provider}")
     print(f"Username: {username}")
     print(f"Password: {password}\n")
     
@@ -864,6 +933,9 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='GitHub Account Generator')
     parser.add_argument('--email', type=str, required=True, help='Email address to use for signup')
+    parser.add_argument('--provider', type=str, required=True, help='Temp email provider (ncaori or 1secemail)')
+    parser.add_argument('--csrf-token', type=str, help='CSRF token from temp email service (required for 1secemail)')
+    parser.add_argument('--cookies', type=str, help='Session cookies from temp email service (required for 1secemail)')
     parser.add_argument('--headless', action='store_true', help='Run in headless mode')
     parser.add_argument('--proxy', type=str, help='Proxy server (e.g., http://ip:port)')
     parser.add_argument('--chrome-binary', type=str, help='Path to Chrome binary')
@@ -875,6 +947,9 @@ if __name__ == '__main__':
     
     result = create_github_account(
         email=args.email,
+        provider=args.provider,
+        csrf_token=args.csrf_token,
+        cookies=args.cookies,
         headless=args.headless,
         proxy=args.proxy,
         chrome_binary=args.chrome_binary
@@ -893,13 +968,3 @@ if __name__ == '__main__':
         print(f"{'='*60}")
         print(f"Error: {result.get('error', 'Unknown error')}")
         exit(1)
-    failed_count = len(results) - success_count
-    
-    print(f"✅ Successful: {success_count}")
-    print(f"❌ Failed: {failed_count}")
-    
-    if success_count > 0:
-        print("\n📝 Created Accounts:")
-        for r in results:
-            if r['success']:
-                print(f"  {r['email']}:{r['password']}:{r['username']}")

@@ -38,7 +38,7 @@ function checkPythonAvailable() {
     });
 }
 
-async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateProgress) {
+async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateProgress, tempEmailProvider = null) {
     const config = getConfig();
     
     let poolProxy = null;
@@ -52,18 +52,26 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
     updateProgress({ step: STEPS.LAUNCHING, email: "Creating temp email..." });
     log("Creating temporary email...");
     
-    const tempEmail = createTempEmail(accountIndex);
-    const username = tempEmail.split('@')[0];
+    const provider = tempEmailProvider || config.tempEmailProvider || "auto";
+    const tempEmail = await createTempEmail(accountIndex, log, provider);
+    const username = tempEmail.email.split('@')[0];
     
-    log(`Temporary email created: ${tempEmail}`);
-    updateProgress({ step: STEPS.LAUNCHING, email: tempEmail });
+    log(`Temporary email created: ${tempEmail.email}`);
+    updateProgress({ step: STEPS.LAUNCHING, email: tempEmail.email });
     
     return new Promise((resolve, reject) => {
         const args = [
             '-u',  // Unbuffered output for real-time logs
             PYTHON_SCRIPT,
-            '--email', tempEmail,
+            '--email', tempEmail.email,
+            '--provider', tempEmail.provider,
         ];
+        
+        // Only pass csrf-token and cookies for stateful providers (1secemail)
+        if (tempEmail.csrfToken && tempEmail.cookies) {
+            args.push('--csrf-token', tempEmail.csrfToken);
+            args.push('--cookies', tempEmail.cookies);
+        }
         
         if (proxyUrl) {
             args.push('--proxy', proxyUrl);
@@ -77,7 +85,7 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
                            '/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome';
         args.push('--chrome-binary', chromeBinary);
         
-        log(`Executing Python script with email: ${tempEmail}`);
+        log(`Executing Python script with email: ${tempEmail.email} (provider: ${tempEmail.provider})`);
         if (proxyUrl) log(`Using proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);
         
         const python = spawn(PYTHON_VENV_PATH, args);
@@ -144,7 +152,7 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
                 } else if (line.includes('Waiting for redirect')) {
                     updateProgress({ step: STEPS.WAITING, email: "Finalizing..." });
                 } else if (line.includes('GitHub account created successfully')) {
-                    updateProgress({ step: STEPS.DONE, email: tempEmail });
+                    updateProgress({ step: STEPS.DONE, email: tempEmail.email });
                 } else if (line.includes('GitHub bot detection triggered')) {
                     updateProgress({ step: STEPS.WAITING, email: "Challenge detected! Solving..." });
                 } else if (line.includes('Captcha detected')) {
@@ -260,6 +268,7 @@ async function runGitHubWorker(
     progress,
     log,
     useProxy = true,
+    tempEmailProvider = null,
 ) {
     const config = getConfig();
 
@@ -292,7 +301,8 @@ async function runGitHubWorker(
                 workerIndex * accountCount + i,
                 useProxy,
                 log,
-                updateProgress
+                updateProgress,
+                tempEmailProvider,
             );
 
             if (result.success && result.account) {
@@ -368,7 +378,7 @@ async function runGitHubWorker(
     };
 }
 
-async function runGitHubSignupAutomation(accountCount = 1, sharedProgress = null, useProxy = true) {
+async function runGitHubSignupAutomation(accountCount = 1, sharedProgress = null, useProxy = true, tempEmailProvider = null) {
     const config = getConfig();
     const logger = createFileLogger();
 
@@ -428,6 +438,7 @@ async function runGitHubSignupAutomation(accountCount = 1, sharedProgress = null
                 progress,
                 logger.log,
                 useProxy,
+                tempEmailProvider,
             );
         }),
     );
@@ -458,5 +469,6 @@ async function runGitHubSignupAutomation(accountCount = 1, sharedProgress = null
 
 module.exports = {
     runGitHubSignupAutomation,
+    createGitHubAccountViaPython,
     checkPythonAvailable,
 };
