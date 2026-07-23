@@ -2,7 +2,7 @@ const { getConfig } = require('./config');
 
 const ROUTER9_PROVIDER = 'grok-cli';
 
-class Router9 {
+class NineRouter {
     constructor(baseUrl, password) {
         this.base = (baseUrl || '').replace(/\/$/, '');
         this.password = password || '';
@@ -190,7 +190,7 @@ async function addAccountToRouter(accountData, browser, log) {
     }
 
     log('[9Router] Starting OAuth device flow...');
-    const r9 = new Router9(routerUrl, routerPass);
+    const r9 = new NineRouter(routerUrl, routerPass);
 
     try {
         log('[9Router] Logging in...');
@@ -328,7 +328,7 @@ async function addAccountToRouter(accountData, browser, log) {
 }
 
 module.exports = {
-    Router9,
+    NineRouter,
     addAccountToRouter,
     expandSsoCookies,
 };

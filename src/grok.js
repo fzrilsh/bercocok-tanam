@@ -17,7 +17,7 @@ const {
 } = require('./grok-utils');
 const { STEPS } = require('./progress');
 const { createFileLogger } = require('./utils');
-const { addAccountToRouter } = require('./router9-helper');
+const { addAccountToRouter } = require('./9router-helper');
 
 const PROJECT_ROOT = join(__dirname, '..');
 const GROK_KEYS_FILE = join(PROJECT_ROOT, 'grok_keys.txt');
