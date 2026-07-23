@@ -348,6 +348,27 @@ async function flow(page, accountIndex, log, updateProgress, tempEmailProvider) 
     const allCookies = await getAllCookies(page);
     const ssoCookies = allCookies.filter((c) => /^(sso|sso-rw|x-userid)$/i.test(c.name));
 
+    log('[Grok] Setting birth date...');
+    try {
+        const birthDateResponse = await page.evaluate(async () => {
+            const response = await fetch('https://grok.com/rest/auth/set-birth-date', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ birthDate: '2007-01-01T17:00:00.000Z' }),
+            });
+            return { ok: response.ok, status: response.status };
+        });
+        if (birthDateResponse.ok) {
+            log('[Grok] Birth date set successfully');
+        } else {
+            log(`[Grok] Birth date set failed: HTTP ${birthDateResponse.status}`);
+        }
+    } catch (e) {
+        log(`[Grok] Birth date error: ${e.message}`);
+    }
+
     updateProgress({ step: STEPS.DONE, email: 'Saving account...' });
     log('[Grok] Step 9: Save credentials');
     const accountData = {
