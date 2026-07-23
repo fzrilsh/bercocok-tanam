@@ -22,6 +22,7 @@ const { launchBrowser } = require("./browser");
 const { completeGoogleLogin } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
+const { createRouter } = require("./9router-helper");
 
 const QUEUE_RETRY_DELAY_MS = 500;
 const TOKENGO_DASHBOARD = "https://dashboard.tokengo.com";
@@ -546,99 +547,28 @@ async function getAffiliateCode(axiosInstance, sessionCookie, userId, log) {
     return affCode;
 }
 
-async function ensureProviderNode(log) {
-    log("Phase 4.1: Checking TokenGo provider node...");
-    
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    
-    // Use native fetch for localhost calls (no proxy needed)
-    const listResponse = await fetch(`${baseUrl}/api/provider-nodes`, {
-        method: "GET",
-        headers: {
-            "Accept": "application/json",
-        },
-    });
-    
-    if (!listResponse.ok) {
-        throw new Error(`Failed to list provider nodes: ${listResponse.status}`);
-    }
-    
-    const listData = await listResponse.json();
-    const nodes = listData.nodes || listData;
-    
-    const existingNode = Array.isArray(nodes) 
-        ? nodes.find((n) => n.prefix === "tokengo")
-        : null;
-    
-    if (existingNode) {
-        log(`TokenGo provider node exists: ${existingNode.id}`);
-        return existingNode.id;
-    }
-    
-    log("Creating TokenGo provider node...");
-    
-    const createResponse = await fetch(`${baseUrl}/api/provider-nodes`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        body: JSON.stringify({
-            name: "TokenGO",
-            prefix: "tokengo",
-            apiType: "chat",
-            baseUrl: "https://api.tokengo.com/v1",
-            type: "openai-compatible",
-        }),
-    });
-    
-    if (!createResponse.ok) {
-        const errorText = await createResponse.text();
-        throw new Error(`Failed to create provider node: ${createResponse.status} ${errorText}`);
-    }
-    
-    const createData = await createResponse.json();
-    const nodeId = createData.id || createData.node?.id;
-    
-    if (!nodeId) {
-        throw new Error(`No ID returned from provider node creation: ${JSON.stringify(createData)}`);
-    }
-    
-    log(`TokenGo provider node created: ${nodeId}`);
-    
-    return nodeId;
-}
+async function registerToRouter(userId, apiKey, log) {
+    const { ok, router, error } = await createRouter(null, log);
+    if (!ok) throw new Error(`Router ${error}`);
 
-async function registerToRouter(providerNodeId, userId, apiKey, log) {
+    log("Phase 4.1: Checking TokenGo provider node...");
+    const providerNodeId = await router.ensureProviderNode(
+        "TokenGO",
+        "tokengo",
+        "chat",
+        "https://api.tokengo.com/v1",
+        "openai-compatible",
+    );
+    log(`TokenGo provider node: ${providerNodeId}`);
+
     log("Phase 4.2: Registering API key to 9router...");
-    
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    
-    // Use native fetch for localhost calls (no proxy needed)
-    const response = await fetch(`${baseUrl}/api/providers`, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-        },
-        body: JSON.stringify({
-            provider: providerNodeId,
-            name: `Account ${userId}`,
-            apiKey,
-            defaultModel: "z-ai/glm-5.2",
-            priority: 1,
-            proxyPoolId: null,
-            testStatus: "active",
-        }),
-    });
-    
-    if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Router registration failed: ${response.status} ${errorText}`);
-    }
-    
+    await router.importProvider(
+        providerNodeId,
+        `Account ${userId}`,
+        apiKey,
+        { defaultModel: "z-ai/glm-5.2" },
+    );
+
     log(`✅ TokenGo key for account ${userId} successfully integrated into 9router!`);
 }
 
@@ -739,8 +669,7 @@ async function processTokenGoAccountOnce(
             // Phase 4: Register to 9router (localhost, no proxy)
             updateProgress({ step: STEPS.IMPORTING });
             try {
-                const providerNodeId = await ensureProviderNode(log);
-                await registerToRouter(providerNodeId, userId, apiKey, log);
+                await registerToRouter(userId, apiKey, log);
             } catch (importErr) {
                 log(`Router import failed (continuing): ${importErr.message}`);
             }
