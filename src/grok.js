@@ -444,6 +444,9 @@ async function runGrokAutomation(accountCount = 1, sharedProgress = null, usePro
             await page.close();
 
             if (result.success) {
+                let routerSuccess = true;
+                let routerError = null;
+
                 // Add to 9router BEFORE closing browser
                 try {
                     updateProgress({ step: STEPS.FINALIZING, email: 'Adding to 9router...' });
@@ -452,16 +455,32 @@ async function runGrokAutomation(accountCount = 1, sharedProgress = null, usePro
                         const status = routerResult.added ? 'Added' : (routerResult.skipped ? 'Skipped' : 'OK');
                         logger.log(`[9Router] ${status} - ${result.account.email}${routerResult.reason ? ` (${routerResult.reason})` : ''}`);
                     } else {
-                        logger.log(`[9Router] Failed: ${routerResult.error || 'unknown'}${routerResult.message ? ` - ${routerResult.message}` : ''}`);
+                        const errMsg = `${routerResult.error || 'unknown'}${routerResult.message ? ` - ${routerResult.message}` : ''}`;
+                        logger.log(`[9Router] Failed: ${errMsg}`);
+                        
+                        // Count as failure only if not skipped (real failure, not just unconfigured)
+                        if (!routerResult.skipped) {
+                            routerSuccess = false;
+                            routerError = errMsg;
+                        }
                     }
                 } catch (e) {
                     logger.log(`[9Router] Exception: ${e.message}`);
+                    routerSuccess = false;
+                    routerError = e.message;
                 }
 
-                successCount++;
-                processedCount++;
-                results.push({ ...result, duration: Math.floor((Date.now() - startedAt) / 1000) });
-                logger.log(`[Grok] Account ${i + 1}/${accountCount}: SUCCESS - ${result.account.email}`);
+                if (routerSuccess) {
+                    successCount++;
+                    processedCount++;
+                    results.push({ ...result, duration: Math.floor((Date.now() - startedAt) / 1000) });
+                    logger.log(`[Grok] Account ${i + 1}/${accountCount}: SUCCESS - ${result.account.email}`);
+                } else {
+                    failedCount++;
+                    processedCount++;
+                    results.push({ success: false, error: `9router failed: ${routerError}`, accountCreated: true, account: result.account });
+                    logger.log(`[Grok] Account ${i + 1}/${accountCount}: FAILED (account created but 9router failed) - ${result.account.email}`);
+                }
             } else {
                 failedCount++;
                 processedCount++;
