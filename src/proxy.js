@@ -50,7 +50,7 @@ async function handlePostLogin(page, log) {
 
         // Scroll to bottom to ensure button is in viewport for headless mode
         // Puppeteer clicks fail silently on off-screen elements in headless
-        await page.keyboard.press('End');
+        await page.keyboard.press("End");
 
         await clickFirstVisibleSelector(
             page,
@@ -75,7 +75,7 @@ async function openProxySignUp(page, log) {
     await clickSelector(page, 'input[type="checkbox"]');
 
     log("Clicking Google Sign Up button...");
-    await clickSelector(page, '::-p-text(Sign Up With Google)');
+    await clickSelector(page, "::-p-text(Sign Up With Google)");
 }
 
 async function handleGoogleLoginPopup(page, account, log) {
@@ -163,7 +163,7 @@ async function fetchProxies(page, planId, log) {
     log("Getting ssotoken cookie...");
 
     const cookies = await page.cookies();
-    const ssotokenCookie = cookies.find(c => c.name === "ssotoken");
+    const ssotokenCookie = cookies.find((c) => c.name === "ssotoken");
 
     if (!ssotokenCookie?.value) {
         throw new Error("ssotoken cookie not found");
@@ -184,7 +184,7 @@ async function fetchProxies(page, planId, log) {
                         authorization: `Token ${ssotoken}`,
                     },
                     method: "GET",
-                }
+                },
             );
 
             const data = await resp.json();
@@ -198,7 +198,7 @@ async function fetchProxies(page, planId, log) {
 
     if (proxyData.status !== 200) {
         throw new Error(
-            `Proxy fetch failed: ${proxyData.error || JSON.stringify(proxyData.data)}`
+            `Proxy fetch failed: ${proxyData.error || JSON.stringify(proxyData.data)}`,
         );
     }
 
@@ -233,8 +233,8 @@ async function processProxyAccount(
     updateProgress,
 ) {
     const config = getConfig();
-    let poolProxy = null;
-    let proxy = account.proxy || null;
+    const poolProxy = null;
+    const proxy = account.proxy || null;
 
     // Skip proxy pool for proxy automation - free datacenter proxies trigger Google CAPTCHA
     // Use direct connection for registration, get clean proxies from successful signups
@@ -278,7 +278,7 @@ async function processProxyAccount(
         log("Browser closed.");
         if (poolProxy) {
             releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+            log(`[Proxy] Released: ${poolProxy.split(":")[0]}`);
         }
     }
 }
@@ -464,7 +464,7 @@ async function runProxyAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
-            )
+            ),
         );
     }
 

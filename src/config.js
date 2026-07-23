@@ -12,9 +12,10 @@ const DEFAULT_RESULT_FILE_TEMPLATE = "{provider}_keys.txt";
 const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "errorAccounts.txt";
 const DEFAULT_PROXY_POOL_FILE_NAME = "proxy_keys.txt";
 
+// Temp userDataDir = private. Avoid --incognito with system Chrome
+// (triggers "Sign in to Chrome?" profile bubbles).
 const DEFAULT_BROWSER_ARGS_SETS = [
     [
-        "--incognito",
         "--disable-extensions",
         "--disable-blink-features=AutomationControlled",
         "--disable-features=BlockThirdPartyCookies",
@@ -22,7 +23,6 @@ const DEFAULT_BROWSER_ARGS_SETS = [
         "--disable-web-security",
     ],
     [
-        "--incognito",
         "--disable-extensions",
         "--disable-blink-features=AutomationControlled",
         "--disable-features=BlockThirdPartyCookies",
@@ -35,7 +35,7 @@ const SHARED_SELECTORS = {
     googleSignIn: "::-p-text(Google)",
     iUnderstand: [
         "::-p-text(I understand)",
-        "::-p-text(Saya mengerti)"
+        "::-p-text(Saya mengerti)",
     ],
     loginOptions: [
         "::-p-text(Allow)",
@@ -43,7 +43,7 @@ const SHARED_SELECTORS = {
         "::-p-text(Accept)",
         "::-p-text(Lanjutkan)",
         "::-p-text(Sign In)",
-        "main > div:nth-child(3) > div > div > div:nth-child(2) > div > div > button"
+        "main > div:nth-child(3) > div > div > div:nth-child(2) > div > div > button",
     ],
 };
 

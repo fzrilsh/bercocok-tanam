@@ -28,17 +28,17 @@ const QUEUE_RETRY_DELAY_MS = 500;
 async function getCodebuddyDeviceCode(routerUrl, log) {
     const baseUrl = routerUrl.replace(/\/$/, "");
     const url = `${baseUrl}/api/oauth/codebuddy-int/device-code`;
-    
+
     log(`[API] Requesting device code from ${url}`);
-    
+
     try {
         const response = await axios.get(url, {
             headers: {
-                'Accept': '*/*',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
-            }
+                "Accept": "*/*",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+            },
         });
-        
+
         log(`[API] Device code received: ${response.data.device_code}`);
         return response.data;
     } catch (error) {
@@ -50,88 +50,88 @@ async function getCodebuddyDeviceCode(routerUrl, log) {
 async function pollCodebuddyCompletion(routerUrl, deviceCode, codeVerifier, log) {
     const baseUrl = routerUrl.replace(/\/$/, "");
     const url = `${baseUrl}/api/oauth/codebuddy-int/poll`;
-    
+
     const startTime = Date.now();
     const timeout = 120000;
     const pollInterval = 500;
-    
+
     log(`[API] Starting polling for device code: ${deviceCode}`);
-    
+
     while (Date.now() - startTime < timeout) {
         try {
             const response = await axios.post(url, {
                 deviceCode: deviceCode,
                 codeVerifier: codeVerifier,
-                extraData: null
+                extraData: null,
             }, {
                 headers: {
-                    'Accept': '*/*',
-                    'Content-Type': 'application/json',
-                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36'
-                }
+                    "Accept": "*/*",
+                    "Content-Type": "application/json",
+                    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
+                },
             });
-            
+
             if (response.data.success === true) {
                 log(`[API] Polling successful! Connection ID: ${response.data.connection.id}`);
                 return response.data;
             }
-            
+
             log(`[API] Polling... (${Math.round((Date.now() - startTime) / 1000)}s elapsed)`);
         } catch (error) {
             log(`[API] Polling error: ${error.message}`);
         }
-        
+
         await sleep(pollInterval);
     }
-    
-    throw new Error('Polling timeout after 120 seconds');
+
+    throw new Error("Polling timeout after 120 seconds");
 }
 
 async function clickSelectorInAnyFrame(page, selector, timeout = 15000, delayBeforeClick = 2000) {
     const startTime = Date.now();
-    
+
     while (Date.now() - startTime < timeout) {
         // First, try the "auth" iframe specifically (most common for Codebuddy))
-        const authFrame = page.frames().find(f => f.name() === 'auth');
+        const authFrame = page.frames().find((f) => f.name() === "auth");
         if (authFrame) {
             try {
                 // Wait for element to be VISIBLE (not just present in DOM)
-                const element = await authFrame.waitForSelector(selector, { 
-                    visible: true, 
-                    timeout: 1000 
+                const element = await authFrame.waitForSelector(selector, {
+                    visible: true,
+                    timeout: 1000,
                 });
                 if (element) {
                     await sleep(delayBeforeClick);
                     await element.click();
-                    return { clicked: true, frameName: 'auth' };
+                    return { clicked: true, frameName: "auth" };
                 }
             } catch (err) {
                 // Element not visible in this frame, continue
             }
         }
-        
+
         // Fallback: search all frames
         const frames = page.frames();
         for (const frame of frames) {
             try {
                 // Wait for element to be VISIBLE (not just present in DOM)
-                const element = await frame.waitForSelector(selector, { 
-                    visible: true, 
-                    timeout: 1000 
+                const element = await frame.waitForSelector(selector, {
+                    visible: true,
+                    timeout: 1000,
                 });
                 if (element) {
                     await sleep(delayBeforeClick);
                     await element.click();
-                    return { clicked: true, frameName: frame.name() || 'unnamed' };
+                    return { clicked: true, frameName: frame.name() || "unnamed" };
                 }
             } catch (err) {
                 // Element not visible in this frame, continue
             }
         }
-        
+
         await sleep(500);
     }
-    
+
     throw new Error(`Selector ${selector} not found (visible) in any frame after ${timeout}ms`);
 }
 
@@ -146,7 +146,7 @@ async function handleCodebuddyLogin(codebuddyPage, log) {
 
     const currentUrl = codebuddyPage.url();
     log(`Login page loaded. Current URL: ${currentUrl}`);
-    
+
     // Wait for network to be idle (page fully loaded)
     log("Waiting for network idle...");
     try {
@@ -155,47 +155,47 @@ async function handleCodebuddyLogin(codebuddyPage, log) {
     } catch (err) {
         log("Network idle timeout, continuing...");
     }
-    
+
     // Wait for loading overlay to disappear
     log("Waiting for loading overlay to disappear...");
     try {
         await codebuddyPage.waitForFunction(
             () => {
-                const loading = document.querySelector('.auth-loading');
-                return !loading || loading.style.display === 'none' || !loading.offsetParent;
+                const loading = document.querySelector(".auth-loading");
+                return !loading || loading.style.display === "none" || !loading.offsetParent;
             },
-            { timeout: 10000 }
+            { timeout: 10000 },
         );
         log("Loading overlay disappeared");
     } catch (err) {
         log("Loading overlay still present or timeout, continuing...");
     }
-    
+
     log("Waiting 4 seconds for elements to be fully interactive...");
     await sleep(4000);
 
     // Debug: check frames and elements
     const debugInfo = await codebuddyPage.evaluate(() => {
         return {
-            iframeCount: document.querySelectorAll('iframe').length,
+            iframeCount: document.querySelectorAll("iframe").length,
             pageTitle: document.title,
-            hasGoogleBtn: !!document.querySelector('a#social-google'),
+            hasGoogleBtn: !!document.querySelector("a#social-google"),
             googleLinksCount: document.querySelectorAll('a[href*="google"]').length,
-            hasLoading: !!document.querySelector('.auth-loading')
+            hasLoading: !!document.querySelector(".auth-loading"),
         };
     });
-    
+
     log(`Debug info: ${JSON.stringify(debugInfo)}`);
 
     log("Searching for Sign in with Google button in iframe...");
-    
+
     const selectors = [
-        'a#social-google',
+        "a#social-google",
         'a[href*="google/login"]',
         'a.sp-button[href*="google"]',
-        'a[href*="broker/google"]'
+        'a[href*="broker/google"]',
     ];
-    
+
     let result = null;
     for (const selector of selectors) {
         try {
@@ -207,22 +207,22 @@ async function handleCodebuddyLogin(codebuddyPage, log) {
             log(`Selector '${selector}' not found, trying next...`);
         }
     }
-    
+
     if (!result) {
-        throw new Error('Google login button not found in any frame with any selector');
+        throw new Error("Google login button not found in any frame with any selector");
     }
 }
 
 async function handleConfirmButton(codebuddyPage, log) {
     try {
         log("Searching for Confirm button in iframe...");
-        
+
         const selectors = [
             'button.ui-button[data-type="success"]',
             'button:has-text("Confirm")',
-            'button[type="submit"]'
+            'button[type="submit"]',
         ];
-        
+
         let found = false;
         for (const selector of selectors) {
             try {
@@ -234,7 +234,7 @@ async function handleConfirmButton(codebuddyPage, log) {
                 // Try next selector
             }
         }
-        
+
         if (!found) {
             log("No Confirm button found, continuing...");
         }
@@ -259,20 +259,20 @@ async function handlePostLogin(codebuddyPage, log) {
     try {
         log("Clicking Login/Allow/Continue...");
 
-        await codebuddyPage.keyboard.press('End');
+        await codebuddyPage.keyboard.press("End");
 
         await Promise.all([
-            codebuddyPage.waitForNavigation({ 
-                waitUntil: 'networkidle2',
-                timeout: 60000 
+            codebuddyPage.waitForNavigation({
+                waitUntil: "networkidle2",
+                timeout: 60000,
             }).catch(() => log("Navigation timeout or no navigation occurred")),
             clickFirstVisibleSelector(
                 codebuddyPage,
                 SHARED_SELECTORS.loginOptions,
                 config.timeouts.short,
-            )
+            ),
         ]);
-        
+
         log("Navigation completed after clicking Allow/Continue");
     } catch (_) {
         log("No Login button found");
@@ -283,24 +283,24 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
     const config = getConfig();
 
     log("Waiting for redirect after Google login...");
-    
+
     await sleep(3000);
-    
+
     let currentUrl = codebuddyPage.url();
     log(`Current URL: ${currentUrl}`);
-    
+
     // If still on Google domain, wait for redirect to codebuddy
-    if (currentUrl.includes('google.com') || currentUrl.includes('googleusercontent.com')) {
+    if (currentUrl.includes("google.com") || currentUrl.includes("googleusercontent.com")) {
         log("Still on Google domain, waiting for redirect to codebuddy...");
         try {
             await codebuddyPage.waitForFunction(
                 () => {
                     const url = window.location.href;
-                    return !url.includes('google.com') && 
-                           !url.includes('googleusercontent.com') && 
-                           url.includes('codebuddy.ai');
+                    return !url.includes("google.com") &&
+                           !url.includes("googleusercontent.com") &&
+                           url.includes("codebuddy.ai");
                 },
-                { timeout: 30000 }
+                { timeout: 30000 },
             );
             currentUrl = codebuddyPage.url();
             log(`Redirected to codebuddy: ${currentUrl}`);
@@ -309,30 +309,30 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
             throw new Error(`Failed to redirect from Google to codebuddy. Still at: ${currentUrl}`);
         }
     }
-    
+
     // If on intermediate/transition pages, wait for redirect to final destination
     const isIntermediatePage = (url) => {
-        return url.includes("/login/select") || 
+        return url.includes("/login/select") ||
                url.includes("/login-actions/");
     };
-    
+
     if (isIntermediatePage(currentUrl)) {
         log("On intermediate/transition page, waiting for redirect to final destination...");
         await codebuddyPage.waitForFunction(
             () => {
                 const url = window.location.href;
-                const isIntermediatePage = url.includes("/login/select") || 
+                const isIntermediatePage = url.includes("/login/select") ||
                                           url.includes("/login-actions/first-broker-login") ||
                                           url.includes("/login-actions/first-broker-lo");
-                return !isIntermediatePage && 
+                return !isIntermediatePage &&
                        (url.includes("/register/user/complete") || url.includes("/started"));
             },
-            { timeout: config.timeouts.navigation }
+            { timeout: config.timeouts.navigation },
         );
         currentUrl = codebuddyPage.url();
         log(`Redirected to: ${currentUrl}`);
     }
-    
+
     // If we're on /started but might redirect to region selection, wait a bit more
     if (currentUrl.includes("/started")) {
         log("On /started page, checking if it redirects to region selection...");
@@ -344,13 +344,13 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
     // Handle region selection if on that page
     if (currentUrl.includes("/register/user/complete")) {
         log("Region selection page detected, selecting Singapore...");
-        
+
         try {
             // Wait for page to be fully loaded
             await codebuddyPage.waitForNetworkIdle({ timeout: 5000 }).catch(() => {
                 log("Network idle timeout, continuing...");
             });
-            
+
             await sleep(2000);
 
             // Click on the region input/dropdown (NOT in iframe, on main page)
@@ -370,7 +370,7 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
             try {
                 await clickSelector(
                     codebuddyPage,
-                    'li::-p-text(Singapore), div::-p-text(Singapore), span::-p-text(Singapore)',
+                    "li::-p-text(Singapore), div::-p-text(Singapore), span::-p-text(Singapore)",
                     {
                         timeout: config.timeouts.short,
                     },
@@ -403,12 +403,12 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
             await codebuddyPage.waitForFunction(
                 () => {
                     const url = window.location.href;
-                    const isIntermediatePage = url.includes("/login/select") || 
+                    const isIntermediatePage = url.includes("/login/select") ||
                                               url.includes("/login-actions/first-broker-login") ||
                                               url.includes("/login-actions/first-broker-lo");
                     return !isIntermediatePage && url.includes("codebuddy.ai/started");
                 },
-                { timeout: config.timeouts.navigation }
+                { timeout: config.timeouts.navigation },
             );
             log("Redirected to /started page!");
         } catch (err) {
@@ -426,6 +426,70 @@ async function handleRegionSelectionAndWaitForSuccess(codebuddyPage, log) {
     } else {
         log(`Unexpected URL: ${currentUrl}`);
         throw new Error(`Expected /started or /register/user/complete, got: ${currentUrl}`);
+    }
+}
+
+async function processCodebuddyOnBrowser(account, ctx) {
+    const { browser, page, proxy, log, updateProgress } = ctx;
+    const config = getConfig();
+
+    log("Getting device code from router API...");
+    const deviceCodeData = await getCodebuddyDeviceCode(config.routerUrl, log);
+    const { device_code, verification_uri, codeVerifier } = deviceCodeData;
+
+    // Shared-browser mode uses launch-time proxy; interception is best-effort for new targets
+    if (proxy) {
+        try {
+            await setupConditionalProxyInterception(page, proxy, log);
+        } catch (err) {
+            log(`[Proxy] Interception setup skipped: ${err.message}`);
+        }
+        browser.on("targetcreated", async (target) => {
+            try {
+                const newPage = await target.page();
+                if (newPage) {
+                    await setupConditionalProxyInterception(newPage, proxy, log);
+                }
+            } catch (err) {
+                log(`[Proxy] Could not setup interception on new target: ${err.message}`);
+            }
+        });
+    }
+
+    updateProgress({ step: STEPS.NAVIGATING, email: account.email });
+    log(`Navigating to verification URI: ${verification_uri}`);
+    await page.goto(verification_uri, {
+        waitUntil: "networkidle2",
+        timeout: config.timeouts.navigation,
+    });
+
+    await handleCodebuddyLogin(page, log);
+    await handleConfirmButton(page, log);
+
+    updateProgress({ step: STEPS.GOOGLE_LOGIN });
+
+    const pollingPromise = pollCodebuddyCompletion(
+        config.routerUrl,
+        device_code,
+        codeVerifier,
+        log,
+    ).catch((err) => {
+        log(`[API] Polling failed: ${err.message}`);
+        return { success: false, error: err.message };
+    });
+    log("[API] Polling started in background");
+
+    await completeGoogleLogin(page, account, log);
+    await handlePostLogin(page, log);
+
+    updateProgress({ step: STEPS.WAITING });
+    await handleRegionSelectionAndWaitForSuccess(page, log);
+
+    updateProgress({ step: STEPS.IMPORTING });
+    log("Waiting for polling to complete...");
+    const pollResult = await pollingPromise;
+    if (pollResult && pollResult.success === false) {
+        throw new Error(pollResult.error || "Codebuddy polling failed");
     }
 }
 
@@ -447,76 +511,22 @@ async function processCodebuddyAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    
-    log(`Getting device code from router API...`);
-    const deviceCodeData = await getCodebuddyDeviceCode(config.routerUrl, log);
-    const { device_code, verification_uri, codeVerifier } = deviceCodeData;
-
-    log(`Launching browser`);
+    log("Launching browser");
     const { browser, page, proxy: conditionalProxy } = await launchBrowser(
         browserArgsIndex,
         workerIndex,
         proxy,
-        { conditionalProxy: true }
+        { conditionalProxy: true },
     );
 
-    if (conditionalProxy) {
-        await setupConditionalProxyInterception(page, conditionalProxy, log);
-        
-        browser.on('targetcreated', async (target) => {
-            try {
-                const newPage = await target.page();
-                if (newPage) {
-                    await setupConditionalProxyInterception(newPage, conditionalProxy, log);
-                }
-            } catch (err) {
-                log(`[Proxy] Could not setup interception on new target: ${err.message}`);
-            }
-        });
-    }
-
     try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        log(`Navigating to verification URI: ${verification_uri}`);
-        await page.goto(verification_uri, {
-            waitUntil: "networkidle2",
-            timeout: config.timeouts.navigation,
+        await processCodebuddyOnBrowser(account, {
+            browser,
+            page,
+            proxy: conditionalProxy || proxy,
+            log,
+            updateProgress,
         });
-
-        let pollingPromise = null;
-        let pollingStarted = false;
-
-        await handleCodebuddyLogin(page, log);
-        await handleConfirmButton(page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        
-        pollingPromise = pollCodebuddyCompletion(
-            config.routerUrl,
-            device_code,
-            codeVerifier,
-            log
-        ).catch(err => {
-            log(`[API] Polling failed: ${err.message}`);
-            return { success: false, error: err.message };
-        });
-        pollingStarted = true;
-        log(`[API] Polling started in background`);
-
-        await completeGoogleLogin(page, account, log);
-        await handlePostLogin(page, log);
-
-        updateProgress({ step: STEPS.WAITING });
-        await handleRegionSelectionAndWaitForSuccess(page, log);
-
-        updateProgress({ step: STEPS.IMPORTING });
-        log(`Waiting for polling to complete...`);
-        
-        if (pollingStarted) {
-            await pollingPromise;
-        } else {
-            throw new Error('Polling was not started');
-        }
 
         removeAccount(account.rawLine);
         log(
@@ -529,7 +539,7 @@ async function processCodebuddyAccount(
         log("Browser closed.");
         if (poolProxy) {
             releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+            log(`[Proxy] Released: ${poolProxy.split(":")[0]}`);
         }
     }
 }
@@ -745,4 +755,5 @@ async function runCodebuddyAutomation(sharedProgress = null, useProxy = true) {
 
 module.exports = {
     runCodebuddyAutomation,
+    processCodebuddyOnBrowser,
 };

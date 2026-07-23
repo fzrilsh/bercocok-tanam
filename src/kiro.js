@@ -58,7 +58,7 @@ async function handlePostLogin(page, log) {
 
         // Scroll to bottom to ensure button is in viewport for headless mode
         // Puppeteer clicks fail silently on off-screen elements in headless
-        await page.keyboard.press('End');
+        await page.keyboard.press("End");
 
         await clickFirstVisibleSelector(
             page,
@@ -155,6 +155,31 @@ async function importRefreshToken(refreshToken, log) {
     log("Successfully imported token!");
 }
 
+async function processKiroOnBrowser(account, ctx) {
+    const { page, log, updateProgress } = ctx;
+
+    updateProgress({ step: STEPS.NAVIGATING, email: account.email });
+    await openKiroSignIn(page, log);
+
+    updateProgress({ step: STEPS.GOOGLE_LOGIN });
+    await completeGoogleLogin(page, account, log);
+    await handlePostLogin(page, log);
+
+    updateProgress({ step: STEPS.WAITING });
+    await waitForDashboard(page, log);
+
+    updateProgress({ step: STEPS.GETTING_TOKEN });
+    const refreshToken = await getRefreshToken(page, log);
+    saveRefreshToken(account.email, refreshToken, log);
+
+    updateProgress({ step: STEPS.IMPORTING });
+    try {
+        await importRefreshToken(refreshToken, log);
+    } catch (importErr) {
+        log(`Router import failed (continuing): ${importErr.message}`);
+    }
+}
+
 async function processKiroAccount(
     account,
     browserArgsIndex,
@@ -173,7 +198,7 @@ async function processKiroAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser`);
+    log("Launching browser");
 
     const { browser, page } = await launchBrowser(
         browserArgsIndex,
@@ -182,26 +207,7 @@ async function processKiroAccount(
     );
 
     try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        await openKiroSignIn(page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await completeGoogleLogin(page, account, log);
-        await handlePostLogin(page, log);
-
-        updateProgress({ step: STEPS.WAITING });
-        await waitForDashboard(page, log);
-
-        updateProgress({ step: STEPS.GETTING_TOKEN });
-        const refreshToken = await getRefreshToken(page, log);
-        saveRefreshToken(account.email, refreshToken, log);
-
-        updateProgress({ step: STEPS.IMPORTING });
-        try {
-            await importRefreshToken(refreshToken, log);
-        } catch (importErr) {
-            log(`Router import failed (continuing): ${importErr.message}`);
-        }
+        await processKiroOnBrowser(account, { browser, page, proxy, log, updateProgress });
 
         removeAccount(account.rawLine);
         log(
@@ -214,7 +220,7 @@ async function processKiroAccount(
         log("Browser closed.");
         if (poolProxy) {
             releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+            log(`[Proxy] Released: ${poolProxy.split(":")[0]}`);
         }
     }
 }
@@ -421,4 +427,5 @@ async function runKiroAutomation(sharedProgress = null, useProxy = true) {
 
 module.exports = {
     runKiroAutomation,
+    processKiroOnBrowser,
 };

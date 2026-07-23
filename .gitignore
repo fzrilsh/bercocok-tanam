@@ -3,7 +3,7 @@ node_modules/
 
 logs/
 accounts.txt
-*_keys.txt
+# *_keys.txt
 errorAccounts.txt
 package-lock.json
 .claude

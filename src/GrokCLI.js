@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { getConfig, SHARED_SELECTORS } = require("./config");
+const { getConfig, getResultFile, SHARED_SELECTORS } = require("./config");
 const {
     sleep,
     readAccounts,
@@ -11,54 +11,133 @@ const {
     acquireAccountLock,
     releaseAccountLock,
     tryAcquireAccountLock,
+    ensureFileExists,
     acquireProxy,
     releaseProxy,
 } = require("./utils");
-const { launchBrowser } = require("./browser");
+const { launchBrowser, waitForNewPage } = require("./browser");
 const {
     completeGoogleLogin,
-    clickSelector,
     clickFirstVisibleSelector,
+    GOOGLE_SELECTORS,
 } = require("./google-login");
 const { STEPS, createProgressManager } = require("./progress");
 const { printReport } = require("./reporter");
 
-const TARGET_URL = 'https://fzrilsh-9router-production.up.railway.app/dashboard/providers/grok-cli';
 const QUEUE_RETRY_DELAY_MS = 500;
+const XAI_GOOGLE_SELECTORS = [
+    "button::-p-text(Login with Google)",
+    "button::-p-text(Continue with Google)",
+    "button::-p-text(Sign in with Google)",
+    "a::-p-text(Continue with Google)",
+    "button::-p-text(Google)",
+    "a::-p-text(Google)",
+];
+
+function getGrokCLIUrl() {
+    const base = getConfig().routerUrl.replace(/\/$/, "");
+    return `${base}/dashboard/providers/grok-cli`;
+}
+
+function isGoogleAuthUrl(url) {
+    return /accounts\.google\.com|google\.com\/signin|google\.com\/oauth/i.test(url || "");
+}
+
+function isTransientNavError(err) {
+    return /detached|Target closed|Session closed|Execution context was destroyed|frame was detached/i
+        .test(err?.message || String(err || ""));
+}
+
+async function waitForXaiGoogleReady(page, log, timeout) {
+    const start = Date.now();
+    let clickedContinue = false;
+
+    while (Date.now() - start < timeout) {
+        try {
+            if (page.isClosed?.()) {
+                throw new Error("xAI popup closed before Google auth");
+            }
+
+            const url = page.url();
+            if (isGoogleAuthUrl(url)) {
+                log("Already on Google auth");
+                return "google";
+            }
+
+            if (await page.$(GOOGLE_SELECTORS.accountChooser)) {
+                log("Google account chooser already open");
+                return "chooser";
+            }
+
+            for (const sel of XAI_GOOGLE_SELECTORS) {
+                const el = await page.$(sel);
+                if (!el) {continue;}
+                const visible = await el.boundingBox().catch(() => null);
+                if (!visible) {continue;}
+                log(`Clicking Google login (${sel})...`);
+                await el.click();
+                return "clicked";
+            }
+
+            // Device / intermediate Continue — only once, and only if no Google button yet
+            if (!clickedContinue) {
+                const cont = await page.$("button::-p-text(Continue)");
+                if (cont) {
+                    const visible = await cont.boundingBox().catch(() => null);
+                    if (visible) {
+                        log("Clicking Continue on device/intermediate page...");
+                        await cont.click();
+                        clickedContinue = true;
+                    }
+                }
+            }
+        } catch (err) {
+            if (!isTransientNavError(err)) {throw err;}
+            log(`Transient nav error (retrying): ${err.message}`);
+        }
+
+        await sleep(250);
+    }
+
+    throw new Error("xAI auth not ready: no Google button / redirect within timeout");
+}
 
 async function open9RouterSignIn(browser, page, log) {
     const config = getConfig();
+    const targetUrl = getGrokCLIUrl();
 
-    log(`Navigating to ${TARGET_URL}`);
-    await page.goto(TARGET_URL, {
+    log(`Navigating to ${targetUrl}`);
+    await page.goto(targetUrl, {
         waitUntil: "networkidle2",
         timeout: config.timeouts.navigation,
     });
 
     log("Clicking Add...");
-    await clickFirstVisibleSelector(page, ["button.bg-brand-500::-p-text(Add)"]);
-
     log("Waiting for xAI popup tab...");
-    await sleep(2000);
-
-    const pages = await browser.pages();
-    const newTab = pages[pages.length - 1];
-
-    if (newTab === page) {
-        throw new Error("Popup tab did not open");
-    }
+    const newTab = await waitForNewPage(
+        browser,
+        () => clickFirstVisibleSelector(page, ["button.bg-brand-500::-p-text(Add)"]),
+        config.timeouts.navigation,
+    );
 
     await newTab.bringToFront();
+    await newTab.waitForNetworkIdle({ timeout: 10000 }).catch(() => {});
 
-    // Now we are at the Device Code screen (e.g. grok.com/device)
-    log("Clicking Continue on Device Code page...");
-    await clickFirstVisibleSelector(newTab, ["button::-p-text(Continue)"]);
-    await sleep(1000);
+    log("Waiting for Google login button or Google redirect...");
+    await waitForXaiGoogleReady(newTab, log, config.timeouts.navigation);
 
-    // Now we are at the Login Options screen
-    log("Clicking Login with Google on xAI...");
-    await clickFirstVisibleSelector(newTab, ["button::-p-text(Login with Google)"]);
-    await sleep(1000);
+    // After click, wait until Google surface (or chooser) actually shows
+    const started = Date.now();
+    while (Date.now() - started < config.timeouts.default) {
+        try {
+            if (isGoogleAuthUrl(newTab.url())) {break;}
+            if (await newTab.$(GOOGLE_SELECTORS.accountChooser)) {break;}
+            if (await newTab.$(GOOGLE_SELECTORS.emailInput)) {break;}
+        } catch (err) {
+            if (!isTransientNavError(err)) {throw err;}
+        }
+        await sleep(250);
+    }
 
     return newTab;
 }
@@ -66,14 +145,18 @@ async function open9RouterSignIn(browser, page, log) {
 async function handlePostLogin(page, log) {
     const config = getConfig();
 
+    // Optional: click if present, skip if not
     try {
+        const iUnderstand = await Promise.race(
+            SHARED_SELECTORS.iUnderstand.map((sel) =>
+                page.waitForSelector(sel, { visible: true, timeout: config.timeouts.short }).then(() => sel),
+            ),
+        );
         log("Clicking I Understand...");
-        await clickSelector(page, SHARED_SELECTORS.iUnderstand, {
-            timeout: config.timeouts.short,
-            delayBeforeClick: config.delays.beforeNextClick,
-        });
+        await sleep(config.delays.beforeNextClick);
+        await page.click(iUnderstand);
     } catch (_) {
-        log("No I Understand button found");
+        log("No I Understand button found, skipping...");
     }
 
     log("Waiting for Grok redirect...");
@@ -83,7 +166,7 @@ async function handlePostLogin(page, log) {
         await clickFirstVisibleSelector(
             page,
             ["button::-p-text(Continue)"],
-            config.timeouts.short
+            config.timeouts.short,
         );
         await sleep(1000);
     } catch (_) {
@@ -92,15 +175,72 @@ async function handlePostLogin(page, log) {
 
     try {
         log("Clicking Allow...");
-        await page.keyboard.press('End');
+        // Scroll bottom — headless click fails silently on off-screen elements
+        await page.keyboard.press("End");
+        await sleep(500);
         await clickFirstVisibleSelector(
             page,
-            ["button::-p-text(Allow)"],
-            config.timeouts.short
+            [
+                "button::-p-text(Allow)",
+                "::-p-text(Allow)",
+                ...SHARED_SELECTORS.loginOptions,
+            ],
+            config.timeouts.default,
         );
     } catch (_) {
         log("No Allow button found");
     }
+}
+
+async function grabGrokCookies(page, log, email) {
+    const config = getConfig();
+
+    log("Navigating to grok.com...");
+    await page.goto("https://grok.com", {
+        waitUntil: "networkidle2",
+        timeout: config.timeouts.navigation,
+    });
+
+    await sleep(config.delays.beforeReadingCookies);
+
+    const cookies = await page.cookies();
+    const cookieHeader = cookies
+        .map(({ name, value }) => `${name}=${value}`)
+        .join("; ");
+
+    if (!cookieHeader) {
+        throw new Error("Grok cookies not found");
+    }
+
+    log(`Got ${cookies.length} Grok cookies`);
+
+    const resultDir = require("path").join(require("./config").ROOT_DIR, "grok_keys");
+    if (!fs.existsSync(resultDir)) {
+        fs.mkdirSync(resultDir, { recursive: true });
+    }
+
+    const resultFile = require("path").join(resultDir, "grok_keys.txt");
+    ensureFileExists(resultFile);
+    fs.appendFileSync(resultFile, `${email}|${cookieHeader}\n`);
+    log(`Cookies saved to ${resultFile}`);
+}
+
+async function processGrokCLIOnBrowser(account, ctx) {
+    const { browser, page, log, updateProgress } = ctx;
+
+    updateProgress({ step: STEPS.NAVIGATING, email: account.email });
+    const popupPage = await open9RouterSignIn(browser, page, log);
+
+    updateProgress({ step: STEPS.GOOGLE_LOGIN });
+    await completeGoogleLogin(popupPage, account, log);
+    await handlePostLogin(popupPage, log);
+
+    updateProgress({ step: STEPS.WAITING });
+    log("Waiting for xAI authorization to finalize...");
+    await sleep(3000);
+
+    updateProgress({ step: STEPS.GETTING_TOKEN });
+    await grabGrokCookies(popupPage, log, account.email);
 }
 
 async function processGrokCLIAccount(
@@ -121,26 +261,12 @@ async function processGrokCLIAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser`);
+    log("Launching browser");
 
-    // Pass false to match old behavior where headless was forced off,
-    // or let it use config.headless if you prefer. Leaving as config.headless to match standard project behavior.
     const { browser, page } = await launchBrowser(browserArgsIndex, workerIndex, proxy);
-    let popupPage = null;
 
     try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        popupPage = await open9RouterSignIn(browser, page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await completeGoogleLogin(popupPage, account, log);
-        await handlePostLogin(popupPage, log);
-
-        updateProgress({ step: STEPS.WAITING });
-
-        // Wait a bit to ensure the login request processes and the popup closes automatically
-        log("Waiting for xAI authorization to finalize...");
-        await sleep(3000);
+        await processGrokCLIOnBrowser(account, { browser, page, proxy, log, updateProgress });
 
         removeAccount(account.rawLine);
         log(`Account login successful! Removed from accounts file: ${account.email}`);
@@ -151,7 +277,7 @@ async function processGrokCLIAccount(
         log("Browser closed.");
         if (poolProxy) {
             releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+            log(`[Proxy] Released: ${poolProxy.split(":")[0]}`);
         }
     }
 }
@@ -256,7 +382,7 @@ async function runGrokCLIWorker(
                 error: accountError,
             });
 
-            if (hasLock) releaseAccountLock(account.email);
+            if (hasLock) {releaseAccountLock(account.email);}
         }
 
         if (queue.length > 0) {
@@ -287,7 +413,7 @@ async function runGrokCLIAutomation(sharedProgress = null, useProxy = true) {
     const accounts = readAccounts();
 
     if (accounts.length === 0) {
-        if (!sharedProgress) console.log("No accounts found. Format: email|password");
+        if (!sharedProgress) {console.log("No accounts found. Format: email|password");}
         logger.close();
         return null;
     }
@@ -320,7 +446,7 @@ async function runGrokCLIAutomation(sharedProgress = null, useProxy = true) {
         }),
     );
 
-    if (!sharedProgress) progress.stop();
+    if (!sharedProgress) {progress.stop();}
 
     const successCount = results.reduce((sum, r) => sum + r.successCount, 0);
     const failedCount = results.reduce((sum, r) => sum + r.failedCount, 0);
@@ -343,4 +469,6 @@ async function runGrokCLIAutomation(sharedProgress = null, useProxy = true) {
 
 module.exports = {
     runGrokCLIAutomation,
+    processGrokCLIOnBrowser,
+    grabGrokCookies,
 };

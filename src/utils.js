@@ -91,11 +91,11 @@ const USER_AGENTS = [
 let uaPool = [];
 
 function randomUA() {
-  if (uaPool.length === 0) {
-    uaPool = [...USER_AGENTS].sort(() => Math.random() - 0.5);
-  }
+    if (uaPool.length === 0) {
+        uaPool = [...USER_AGENTS].sort(() => Math.random() - 0.5);
+    }
 
-  return uaPool.pop();
+    return uaPool.pop();
 }
 
 const sleep = (milliseconds) =>
@@ -298,16 +298,16 @@ function readProxyPool() {
 
     const lines = readLines(config.proxyPoolFile);
     return lines
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith("#"))
-        .map(line => {
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"))
+        .map((line) => {
             // Convert host:port:user:pass to http://user:pass@host:port
-            const parts = line.split(':');
-            if (parts.length >= 4 && !line.includes('://')) {
+            const parts = line.split(":");
+            if (parts.length >= 4 && !line.includes("://")) {
                 const host = parts[0];
                 const port = parts[1];
                 const user = parts[2];
-                const pass = parts.slice(3).join(':'); // Handle pass with colons
+                const pass = parts.slice(3).join(":"); // Handle pass with colons
                 return `http://${user}:${pass}@${host}:${port}`;
             }
             return line; // Already in URL format
@@ -317,15 +317,15 @@ function readProxyPool() {
 function getProxyIP(proxy) {
     // Extract IP:port from proxy string (base cooldown on IP, not credentials)
     // Format: http://user:pass@ip:port -> ip:port
-    if (proxy.includes('@')) {
-        return proxy.split('@')[1];
+    if (proxy.includes("@")) {
+        return proxy.split("@")[1];
     }
     // Format: http://ip:port -> ip:port
-    if (proxy.includes('://')) {
-        return proxy.split('://')[1];
+    if (proxy.includes("://")) {
+        return proxy.split("://")[1];
     }
     // Fallback: ip:port...
-    return proxy.split(':').slice(0, 2).join(':');
+    return proxy.split(":").slice(0, 2).join(":");
 }
 
 async function acquireProxy(log, progressUpdate) {
@@ -344,7 +344,7 @@ async function acquireProxy(log, progressUpdate) {
             // Check if proxy available (not in use AND past cooldown)
             if (!activeProxies.has(proxy) && cooldownRemaining <= 0) {
                 activeProxies.add(proxy);
-                if (log) {log(`[Proxy] Acquired: ${proxyIP.split(':')[0]}`);}
+                if (log) {log(`[Proxy] Acquired: ${proxyIP.split(":")[0]}`);}
                 return proxy;
             }
 
@@ -361,8 +361,8 @@ async function acquireProxy(log, progressUpdate) {
             if (progressUpdate) {progressUpdate({ step: `⏳ Proxy cooldown ${waitSec}s` });}
             await sleep(Math.min(earliestAvailable + PROXY_WAIT_BUFFER_MS, PROXY_WAIT_MAX_MS));
         } else {
-            if (log) {log('[Proxy] All proxies in use, waiting...');}
-            if (progressUpdate) {progressUpdate({ step: '⏳ Antri proxy...' });}
+            if (log) {log("[Proxy] All proxies in use, waiting...");}
+            if (progressUpdate) {progressUpdate({ step: "⏳ Antri proxy..." });}
             await sleep(PROXY_POOL_POLL_MS);
         }
     }

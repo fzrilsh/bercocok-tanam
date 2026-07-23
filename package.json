@@ -1,7 +1,7 @@
 {
-  "name": "bercocok-tanam",
-  "version": "1.0.0",
-  "description": "Automated CLI tool for harvesting Kiro OAuth refresh tokens and Cloudflare Workers AI API tokens with multi-worker parallel processing and comprehensive error tracking",
+  "name": "bercocok-tanam-shared",
+  "version": "1.1.0",
+  "description": "Account-centric multi-provider automation: 1 account = 1 Chrome, providers run sequentially via pages",
   "main": "index.js",
   "scripts": {
     "start": "node index.js",

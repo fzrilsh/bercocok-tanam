@@ -59,7 +59,7 @@ function printReport(title, workerStats, totalDuration) {
         console.log(`    Average: ${formatTime(avgWorkerTime)}/account`);
 
         if (stats.accounts.length > 0) {
-            console.log(`    Accounts:`);
+            console.log("    Accounts:");
             stats.accounts.forEach((acc) => {
                 const statusIcon = acc.success ? colors.green("✅") : colors.red("❌");
                 const timeStr = colors.gray(formatTime(acc.duration));
@@ -84,7 +84,7 @@ function printReport(title, workerStats, totalDuration) {
         });
 
         console.log("");
-        console.log(colors.yellow(`  💡 Check errorAccounts.txt for complete details`));
+        console.log(colors.yellow("  💡 Check errorAccounts.txt for complete details"));
     }
 
     console.log("");

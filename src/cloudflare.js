@@ -60,7 +60,7 @@ async function handlePostLogin(page, log) {
 
         // Scroll to bottom to ensure button is in viewport for headless mode
         // Puppeteer clicks fail silently on off-screen elements in headless
-        await page.keyboard.press('End');
+        await page.keyboard.press("End");
 
         await clickFirstVisibleSelector(
             page,
@@ -92,7 +92,7 @@ async function waitForDashboard(page, log) {
     log("Redirected to CF dashboard!");
 }
 
-async function harvestToken(page, log) {
+async function getAccountAndPermissions(page, log) {
     log("Getting account ID...");
 
     const accountResult = await page.evaluate(async () => {
@@ -157,29 +157,25 @@ async function harvestToken(page, log) {
     }
 
     const groups = permResult.data?.result || [];
-    const permIds = groups
-        .filter((g) => {
-            const n = (g.name || "").toLowerCase();
-            const isScriptEdit = n.includes("workers scripts write") || n.includes("worker scripts write");
-            const isAI = n.includes("workers ai");
-            return isScriptEdit || isAI;
-        })
-        .map((g) => ({ id: g.id, name: g.name || "" }));
 
+    return { accountId, groups };
+}
+
+async function createToken(page, log, accountId, permIds, namePrefix) {
     if (permIds.length === 0) {
-        throw new Error("No Workers AI / Script permission groups found");
+        throw new Error(`No permission groups found for ${namePrefix}`);
     }
 
-    log(`Found ${permIds.length} Workers AI / Script permission groups`);
-    log("Creating API token...");
+    log(`Found ${permIds.length} permission groups for ${namePrefix}`);
+    log(`Creating API token for ${namePrefix}...`);
 
     const payload = {
-        name: `cf-ai-${Math.floor(Date.now() / 1000)}`,
+        name: `${namePrefix}-${Math.floor(Date.now() / 1000)}`,
         policies: [
             {
                 effect: "allow",
                 permission_groups: permIds.map((p) => ({ id: p.id })),
-                resources: { [`com.cloudflare.api.account.${accountId}`]: "*" },
+                resources: { "com.cloudflare.api.account.*": "*" },
             },
         ],
     };
@@ -220,20 +216,40 @@ async function harvestToken(page, log) {
 
     log(`Token: ${token.slice(0, 25)}...`);
 
-    return { accountId, token };
+    return token;
 }
 
-function saveToken(accountId, token, log) {
-    const resultFile = getResultFile("cloudflare");
+function saveToken(accountId, token, prefix, account, log) {
+    const cfDir = require("path").join(require("./config").ROOT_DIR, "cloudflare_keys");
+    const { ensureFileExists } = require("./utils");
 
-    ensureFileExists(resultFile);
+    if (!require("fs").existsSync(cfDir)) {
+        require("fs").mkdirSync(cfDir, { recursive: true });
+    }
 
-    fs.appendFileSync(
-        resultFile,
-        `cloudflare_${accountId.slice(0, 6)}|${token}|${accountId}\n`,
-    );
+    const aiFile = require("path").join(cfDir, "cloudflare-ai_keys.txt");
+    const proxyFile = require("path").join(cfDir, "cloudflare-proxy_keys.txt");
 
-    log(`Token saved to ${resultFile}`);
+    ensureFileExists(aiFile);
+    ensureFileExists(proxyFile);
+
+    const name = account.email.split("@")[0];
+
+    if (prefix === "cloudflare") {
+        // AI key
+        require("fs").appendFileSync(
+            aiFile,
+            `${name}|${token}|${accountId}\n`,
+        );
+    } else if (prefix === "cloudflareproxy") {
+        // Proxy key
+        require("fs").appendFileSync(
+            proxyFile,
+            `${name}|${token}|${accountId}\n`,
+        );
+    }
+
+    log(`Token saved to ${prefix} file`);
 }
 
 async function validateProvider(apiKey, accountId, log) {
@@ -276,46 +292,46 @@ async function validateProvider(apiKey, accountId, log) {
     return data;
 }
 
-async function deployCloudflareRelay(apiKey, accountId, log) {
-    const config = getConfig();
-    const baseUrl = config.routerUrl.replace(/\/$/, "");
-    const apiUrl = `${baseUrl}/api/proxy-pools/cloudflare-deploy`;
-    const connectionName = `cloudflareproxy_${accountId.slice(0, 6)}`;
+// async function deployCloudflareRelay(apiKey, accountId, log) {
+//     const config = getConfig();
+//     const baseUrl = config.routerUrl.replace(/\/$/, "");
+//     const apiUrl = `${baseUrl}/api/proxy-pools/cloudflare-deploy`;
+//     const connectionName = `cloudflareproxy_${accountId.slice(0, 6)}`;
 
-    log(`Deploying Cloudflare relay "${connectionName}"...`);
+//     log(`Deploying Cloudflare relay "${connectionName}"...`);
 
-    const response = await fetch(apiUrl, {
-        method: "POST",
-        headers: {
-            "Content-Type": "application/json",
-            Accept: "application/json",
-        },
-        body: JSON.stringify({
-            accountId: accountId,
-            apiToken: apiKey,
-            projectName: connectionName,
-        }),
-    });
+//     const response = await fetch(apiUrl, {
+//         method: "POST",
+//         headers: {
+//             "Content-Type": "application/json",
+//             Accept: "application/json",
+//         },
+//         body: JSON.stringify({
+//             accountId: accountId,
+//             apiToken: apiKey,
+//             projectName: connectionName,
+//         }),
+//     });
 
-    const text = await response.text();
-    let data;
+//     const text = await response.text();
+//     let data;
 
-    try {
-        data = JSON.parse(text);
-    } catch (_) {
-        throw new Error(`Invalid JSON from deploy: ${text.substring(0, 100)}`);
-    }
+//     try {
+//         data = JSON.parse(text);
+//     } catch (_) {
+//         throw new Error(`Invalid JSON from deploy: ${text.substring(0, 100)}`);
+//     }
 
-    if (!response.ok) {
-        throw new Error(
-            `Deploy error ${response.status}: ${data.error || JSON.stringify(data)}`,
-        );
-    }
+//     if (!response.ok) {
+//         throw new Error(
+//             `Deploy error ${response.status}: ${data.error || JSON.stringify(data)}`,
+//         );
+//     }
 
-    log(`Successfully deployed relay! URL: ${data.deployUrl}`);
+//     log(`Successfully deployed relay! URL: ${data.deployUrl}`);
 
-    return data;
-}
+//     return data;
+// }
 
 async function importToRouter(apiKey, accountId, log) {
     const config = getConfig();
@@ -362,6 +378,88 @@ async function importToRouter(apiKey, accountId, log) {
     return data;
 }
 
+async function processCFOnBrowser(account, ctx) {
+    const { page, log, updateProgress } = ctx;
+
+    updateProgress({ step: STEPS.NAVIGATING, email: account.email });
+    await openCFSignIn(page, log);
+
+    updateProgress({ step: STEPS.GOOGLE_LOGIN });
+    await completeGoogleLogin(page, account, log);
+    await handlePostLogin(page, log);
+
+    updateProgress({ step: STEPS.WAITING });
+    await waitForDashboard(page, log);
+
+    // Save combined
+    try {
+        const cookies = await page.cookies();
+        const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+        const name = account.email.split("@")[0];
+
+        const cfDir = require("path").join(require("./config").ROOT_DIR, "cloudflare_keys");
+        if (!require("fs").existsSync(cfDir)) {
+            require("fs").mkdirSync(cfDir, { recursive: true });
+        }
+
+        const mainFile = require("path").join(cfDir, "cloudflare_keys.txt");
+
+        fs.appendFileSync(
+            mainFile,
+            `${name}|${account.email}|${cookieString}|${name}|${name}\n`,
+        );
+        log("Saved cloudflare_keys.txt with cookies");
+    } catch (e) {
+        log(`Failed to save combined keys: ${e.message}`);
+    }
+
+    updateProgress({ step: STEPS.HARVESTING });
+    const { accountId, groups } = await getAccountAndPermissions(page, log);
+
+    // Create Script Token
+    const scriptPermIds = groups
+        .filter((g) => {
+            const n = (g.name || "").toLowerCase();
+            return n.includes("workers scripts write") || n.includes("worker scripts write");
+        })
+        .map((g) => ({ id: g.id, name: g.name || "" }));
+
+    const scriptToken = await createToken(page, log, accountId, scriptPermIds, "cf-script");
+    saveToken(accountId, scriptToken, "cloudflareproxy", account, log);
+
+    // Deploy Relay
+    try {
+        // await deployCloudflareRelay(scriptToken, accountId, log);
+    } catch (importErr) {
+        log(`Relay deploy failed (continuing): ${importErr.message}`);
+    }
+
+    // Create AI Token
+    const aiPermIds = groups
+        .filter((g) => {
+            const n = (g.name || "").toLowerCase();
+            return n.includes("workers ai");
+        })
+        .map((g) => ({ id: g.id, name: g.name || "" }));
+
+    const aiToken = await createToken(page, log, accountId, aiPermIds, "cf-ai");
+    saveToken(accountId, aiToken, "cloudflare", account, log);
+
+    updateProgress({ step: STEPS.VALIDATING });
+    try {
+        await validateProvider(aiToken, accountId, log);
+    } catch (valErr) {
+        log(`Validation warning (continuing): ${valErr.message}`);
+    }
+
+    updateProgress({ step: STEPS.IMPORTING_CF });
+    try {
+        await importToRouter(aiToken, accountId, log);
+    } catch (importErr) {
+        log(`Router import failed (continuing): ${importErr.message}`);
+    }
+}
+
 async function processCFAccount(
     account,
     browserArgsIndex,
@@ -380,7 +478,7 @@ async function processCFAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser`);
+    log("Launching browser");
 
     const { browser, page } = await launchBrowser(
         browserArgsIndex,
@@ -389,35 +487,7 @@ async function processCFAccount(
     );
 
     try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        await openCFSignIn(page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await completeGoogleLogin(page, account, log);
-        await handlePostLogin(page, log);
-
-        updateProgress({ step: STEPS.WAITING });
-        await waitForDashboard(page, log);
-
-        updateProgress({ step: STEPS.HARVESTING });
-        const { accountId, token } = await harvestToken(page, log);
-        saveToken(accountId, token, log);
-
-        updateProgress({ step: STEPS.VALIDATING });
-
-        try {
-            await validateProvider(token, accountId, log);
-        } catch (valErr) {
-            log(`Validation warning (continuing): ${valErr.message}`);
-        }
-
-        updateProgress({ step: STEPS.IMPORTING_CF });
-        try {
-            await deployCloudflareRelay(token, accountId, log);
-            await importToRouter(token, accountId, log);
-        } catch (importErr) {
-            log(`Router import failed (continuing): ${importErr.message}`);
-        }
+        await processCFOnBrowser(account, { browser, page, proxy, log, updateProgress });
 
         removeAccount(account.rawLine);
         log(`Account harvest + import successful! Removed: ${account.email}`);
@@ -428,7 +498,7 @@ async function processCFAccount(
         log("Browser closed.");
         if (poolProxy) {
             releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+            log(`[Proxy] Released: ${poolProxy.split(":")[0]}`);
         }
     }
 }
@@ -640,4 +710,5 @@ async function runCloudflareAutomation(sharedProgress = null, useProxy = true) {
 
 module.exports = {
     runCloudflareAutomation,
+    processCFOnBrowser,
 };

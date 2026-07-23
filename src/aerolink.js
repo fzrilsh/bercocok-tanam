@@ -39,8 +39,8 @@ async function openAerolinkSignIn(page, log) {
     log("Waiting for Cloudflare challenge to pass...");
     try {
         await page.waitForFunction(
-            () => !document.querySelector('#challenge-error-text') && !document.querySelector('.cf-turnstile-wrapper') && !document.querySelector('#turnstile-wrapper'),
-            { timeout: config.timeouts.navigation }
+            () => !document.querySelector("#challenge-error-text") && !document.querySelector(".cf-turnstile-wrapper") && !document.querySelector("#turnstile-wrapper"),
+            { timeout: config.timeouts.navigation },
         );
         log("Cloudflare challenge cleared.");
     } catch (_) {
@@ -55,7 +55,7 @@ async function openAerolinkSignIn(page, log) {
     // Try catching it via specific text content
     await clickSelector(page, "::-p-text(Sign up with Google)", {
         timeout: 30000,
-        visible: true
+        visible: true,
     });
 }
 
@@ -74,7 +74,7 @@ async function handlePostLogin(page, log) {
 
     try {
         log("Clicking Login/Allow/Continue...");
-        await page.keyboard.press('End');
+        await page.keyboard.press("End");
         await clickFirstVisibleSelector(
             page,
             SHARED_SELECTORS.loginOptions,
@@ -129,6 +129,24 @@ function saveCookieHeader(email, cookieHeader, log) {
     log(`Full cookie header saved to ${resultFile}`);
 }
 
+async function processAerolinkOnBrowser(account, ctx) {
+    const { page, log, updateProgress } = ctx;
+
+    updateProgress({ step: STEPS.NAVIGATING, email: account.email });
+    await openAerolinkSignIn(page, log);
+
+    updateProgress({ step: STEPS.GOOGLE_LOGIN });
+    await completeGoogleLogin(page, account, log);
+    await handlePostLogin(page, log);
+
+    updateProgress({ step: STEPS.WAITING });
+    await waitForDashboard(page, log);
+
+    updateProgress({ step: STEPS.GETTING_TOKEN });
+    const { cookieHeader } = await getAerolinkSession(page, log);
+    saveCookieHeader(account.email, cookieHeader, log);
+}
+
 async function processAerolinkAccount(
     account,
     browserArgsIndex,
@@ -147,25 +165,12 @@ async function processAerolinkAccount(
     }
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser`);
+    log("Launching browser");
 
     const { browser, page } = await launchBrowser(browserArgsIndex, workerIndex, proxy);
 
     try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        await openAerolinkSignIn(page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await completeGoogleLogin(page, account, log);
-        await handlePostLogin(page, log);
-
-        updateProgress({ step: STEPS.WAITING });
-        await waitForDashboard(page, log);
-
-        updateProgress({ step: STEPS.GETTING_TOKEN });
-        const { cookieHeader } = await getAerolinkSession(page, log);
-
-        saveCookieHeader(account.email, cookieHeader, log);
+        await processAerolinkOnBrowser(account, { browser, page, proxy, log, updateProgress });
 
         removeAccount(account.rawLine);
         log(`Account login successful! Removed from accounts file: ${account.email}`);
@@ -176,7 +181,7 @@ async function processAerolinkAccount(
         log("Browser closed.");
         if (poolProxy) {
             releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+            log(`[Proxy] Released: ${poolProxy.split(":")[0]}`);
         }
     }
 }
@@ -281,7 +286,7 @@ async function runAerolinkWorker(
                 error: accountError,
             });
 
-            if (hasLock) releaseAccountLock(account.email);
+            if (hasLock) {releaseAccountLock(account.email);}
         }
 
         if (queue.length > 0) {
@@ -312,7 +317,7 @@ async function runAerolinkAutomation(sharedProgress = null, useProxy = true) {
     const accounts = readAccounts();
 
     if (accounts.length === 0) {
-        if (!sharedProgress) console.log("No accounts found. Format: email|password");
+        if (!sharedProgress) {console.log("No accounts found. Format: email|password");}
         logger.close();
         return null;
     }
@@ -345,7 +350,7 @@ async function runAerolinkAutomation(sharedProgress = null, useProxy = true) {
         }),
     );
 
-    if (!sharedProgress) progress.stop();
+    if (!sharedProgress) {progress.stop();}
 
     const successCount = results.reduce((sum, r) => sum + r.successCount, 0);
     const failedCount = results.reduce((sum, r) => sum + r.failedCount, 0);
@@ -368,4 +373,5 @@ async function runAerolinkAutomation(sharedProgress = null, useProxy = true) {
 
 module.exports = {
     runAerolinkAutomation,
+    processAerolinkOnBrowser,
 };
