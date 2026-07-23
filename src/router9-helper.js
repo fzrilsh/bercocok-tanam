@@ -123,7 +123,9 @@ function expandSsoCookies(cookies) {
     const authNames = /^(sso|sso-rw|x-userid)$/i;
     const isAuthDomain = (d) => {
         const x = d.toLowerCase().replace(/^\./, '');
-        return x === 'grok.com' || x.endsWith('.grok.com') || x === 'x.ai' || x.endsWith('.x.ai');
+        return x === 'grok.com' || x.endsWith('.grok.com') || 
+               x === 'grokipedia.com' || x.endsWith('.grokipedia.com') ||
+               x === 'x.ai' || x.endsWith('.x.ai');
     };
 
     for (const c of cookies) {
@@ -132,7 +134,7 @@ function expandSsoCookies(cookies) {
         push(c);
     }
 
-    const targets = ['.grok.com', '.x.ai', 'auth.x.ai', 'accounts.x.ai'];
+    const targets = ['.grok.com', '.grokipedia.com', '.x.ai', 'auth.x.ai', 'accounts.x.ai'];
     for (const c of [...out]) {
         for (const domain of targets) {
             push({
