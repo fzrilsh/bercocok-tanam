@@ -15,6 +15,7 @@ accounts.json
 *_keys.txt
 errorAccounts.txt
 retryAccounts/
+warm_cookies.json
 
 # Python
 venv/
