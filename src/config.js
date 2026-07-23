@@ -152,6 +152,7 @@ function createConfig() {
         browserCount: Math.max(1, toPositiveNumber(env.BROWSER_COUNT, 1)),
         slowMo: toPositiveNumber(env.BROWSER_SLOW_MO, 2),
         routerUrl: env.ROUTER_URL || DEFAULT_ROUTER_URL,
+        routerPassword: env.ROUTER_PASS || env.ROUTER_PASSWORD || '',
         chromeExecutablePath: env.CHROME_EXECUTABLE_PATH || DEFAULT_CHROME_PATH,
         accountFile: path.resolve(
             ROOT_DIR,
