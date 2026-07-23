@@ -173,10 +173,10 @@ async function sleep(ms) {
 async function addAccountToRouter(accountData, browser, log) {
     const config = getConfig();
     const routerUrl = config.routerUrl || process.env.ROUTER9_URL || process.env.ROUTER_URL;
-    const routerPass = config.routerPassword || process.env.ROUTER9_PASS || process.env.ROUTER_PASSWORD;
+    const routerPass = config.routerPassword || process.env.ROUTER9_PASS || process.env.ROUTER_PASS || process.env.ROUTER_PASSWORD;
 
     if (!routerUrl || !routerPass) {
-        log('[9Router] Not configured (ROUTER9_URL or ROUTER9_PASS missing), skipping');
+        log('[9Router] Not configured (missing ROUTER_URL and ROUTER_PASS), skipping');
         return { success: false, skipped: true, reason: 'not configured' };
     }
 
