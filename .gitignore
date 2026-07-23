@@ -17,6 +17,9 @@ errorAccounts.txt
 retryAccounts/
 warm_cookies.json
 
+# Turnstile extension (Grok automation)
+turnstile/
+
 # Python
 venv/
 __pycache__/

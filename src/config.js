@@ -165,6 +165,12 @@ function createConfig() {
         proxyPoolFile: env.PROXY_POOL_FILE ? path.resolve(ROOT_DIR, env.PROXY_POOL_FILE) : null,
         browserArgsSets: parseBrowserArgsSets(env.BROWSER_ARGS_SETS),
         tempEmailProvider: parseTempEmailProvider(env.TEMP_EMAIL_PROVIDER),
+        password: env.PASSWORD || 'DefaultPass123!@#',
+        grokPassword: env.GROK_PASSWORD || env.PASSWORD || 'DefaultPass123!@#',
+        sealUnlockUrl: env.SEAL_UNLOCK_URL || '',
+        sealToken: env.SEAL_TOKEN || '',
+        sealKey: env.SEAL_KEY || '',
+        turnstileExtPath: env.TURNSTILE_EXT_PATH || '',
         delays: {
             beforeNextClick: toPositiveNumber(env.DELAY_BEFORE_NEXT_CLICK_MS, 1000),
             betweenAccounts: toPositiveNumber(env.DELAY_BETWEEN_ACCOUNTS_MS, 3000),
