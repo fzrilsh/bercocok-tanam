@@ -103,8 +103,8 @@ CHROME_EXECUTABLE_PATH=/path/to/chrome
 
 # File paths
 ACCOUNT_FILE=accounts.txt
-RESULT_FILE={provider}_keys.txt
-ERROR_ACCOUNT_FILE=errorAccounts.txt
+RESULT_FILE=output/keys/{provider}_keys.txt
+ERROR_ACCOUNT_FILE=output/errors/errorAccounts.txt
 PROXY_POOL_FILE=proxy_keys.txt
 
 # Timing & delays
@@ -154,8 +154,8 @@ TURNSTILE_EXT_PATH=
 | `CHROME_EXECUTABLE_PATH` | Path to Chrome/Chromium executable | Auto-detect |
 | **File Paths** | | |
 | `ACCOUNT_FILE` | Path to accounts file | `accounts.txt` |
-| `RESULT_FILE` | Output file template - `{provider}` is replaced with automation name | `{provider}_keys.txt` |
-| `ERROR_ACCOUNT_FILE` | Log file for failed accounts | `errorAccounts.txt` |
+| `RESULT_FILE` | Output file template - `{provider}` is replaced with automation name | `output/keys/{provider}_keys.txt` |
+| `ERROR_ACCOUNT_FILE` | Log file for failed accounts | `output/errors/errorAccounts.txt` |
 | `PROXY_POOL_FILE` | Shared proxy pool file (optional) | `proxy_keys.txt` |
 | **Timing & Delays (milliseconds)** | | |
 | `DELAY_BEFORE_NEXT_CLICK_MS` | Delay before next click action | `1000` |
@@ -318,21 +318,21 @@ After each automation run, you'll see a detailed report:
   • user3@gmail.com
     Error: RefreshToken cookie not found
 
-  💡 Check errorAccounts.txt for complete details
+  💡 Check output/errors/errorAccounts.txt for complete details
 
 ════════════════════════════════════════════════════════════════════════════════
 ```
 
 ## 📁 Output Files
 
-- **`{provider}_keys.txt`** - Token output files, generated per automation:
-  - `kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
-  - `cloudflare_keys.txt` — Cloudflare Workers AI API tokens
-  - `codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router, no local save)
-  - `tokengo_keys.txt` — TokenGo API keys (format: `email|userId|apiKey`, auto-imported to 9Router)
-  - `grok_keys.txt` — Grok account credentials (format: `email|password`, auto-imported to 9Router)
-  - `github_keys.txt` — GitHub account credentials (format: `email|password|username`)
-- **`errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
+- **`output/keys/{provider}_keys.txt`** - Token output files, generated per automation:
+  - `output/keys/kiro_keys.txt` — Kiro refresh tokens (format: `email|refreshToken`)
+  - `output/keys/cloudflare_keys.txt` — Cloudflare Workers AI API tokens
+  - `output/keys/codebuddy_keys.txt` — Codebuddy OAuth tokens (auto-imported to 9Router, no local save)
+  - `output/keys/tokengo_keys.txt` — TokenGo API keys (format: `email|userId|apiKey`, auto-imported to 9Router)
+  - `output/keys/grok_keys.txt` — Grok account credentials (format: `email|password`, auto-imported to 9Router)
+  - `output/keys/github_keys.txt` — GitHub account credentials (format: `email|password|username`)
+- **`output/errors/errorAccounts.txt`** - Failed accounts with error messages, timestamps, and automation type
 - **`logs/`** - Detailed execution logs with timestamps
 
 ### Error Accounts Format
@@ -400,13 +400,16 @@ bercocok-tanam/
 ├── assets/
 │   └── screenshot.png
 ├── accounts.txt          # Account list (user-created)
-├── kiro_keys.txt         # Kiro tokens output (auto-generated)
-├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
-├── codebuddy_keys.txt    # Codebuddy tokens output (not saved, auto-imported)
-├── tokengo_keys.txt      # TokenGo API keys output (auto-generated, auto-imported)
-├── grok_keys.txt         # Grok account credentials (auto-generated, auto-imported)
-├── github_keys.txt       # GitHub account credentials (auto-generated)
-├── errorAccounts.txt     # Failed accounts log
+├── output/               # Generated output files
+│   ├── keys/            # Token and credential files
+│   │   ├── kiro_keys.txt
+│   │   ├── cloudflare_keys.txt
+│   │   ├── codebuddy_keys.txt
+│   │   ├── tokengo_keys.txt
+│   │   ├── grok_keys.txt
+│   │   └── github_keys.txt
+│   └── errors/
+│       └── errorAccounts.txt
 ├── logs/                 # Execution logs
 ├── .env                  # Configuration (user-created)
 ├── .env.example          # Configuration template

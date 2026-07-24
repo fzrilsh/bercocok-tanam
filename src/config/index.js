@@ -8,9 +8,25 @@ const DEFAULT_CHROME_PATH =
   "/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome";
 const DEFAULT_ROUTER_URL = "http://127.0.0.1:20128/";
 const DEFAULT_ACCOUNT_FILE_NAME = "accounts.txt";
-const DEFAULT_RESULT_FILE_TEMPLATE = "{provider}_keys.txt";
-const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "errorAccounts.txt";
+const DEFAULT_RESULT_FILE_TEMPLATE = "output/keys/{provider}_keys.txt";
+const DEFAULT_ERROR_ACCOUNT_FILE_NAME = "output/errors/errorAccounts.txt";
 const DEFAULT_PROXY_POOL_FILE_NAME = "proxy_keys.txt";
+
+// Ensure output directories exist
+function ensureOutputDirectories() {
+    const dirs = [
+        path.join(ROOT_DIR, "output"),
+        path.join(ROOT_DIR, "output", "keys"),
+        path.join(ROOT_DIR, "output", "errors"),
+        path.join(ROOT_DIR, "output", "logs"),
+    ];
+    
+    for (const dir of dirs) {
+        if (!fs.existsSync(dir)) {
+            fs.mkdirSync(dir, { recursive: true });
+        }
+    }
+}
 
 const DEFAULT_BROWSER_ARGS_SETS = [
     [
@@ -248,9 +264,13 @@ function updateEnvValue(key, value) {
     fs.writeFileSync(ENV_PATH, updatedLines.join("\n"));
 }
 
+// Ensure output directories exist before creating config
+ensureOutputDirectories();
+
 let CONFIG = createConfig();
 
 function reloadConfig() {
+    ensureOutputDirectories(); // Ensure dirs exist on reload too
     CONFIG = createConfig();
 
     return CONFIG;
