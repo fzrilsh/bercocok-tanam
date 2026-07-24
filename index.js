@@ -128,7 +128,7 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
         } else if (automationType === "codebuddy") {
             result = await runCodebuddyAutomation();
         } else if (automationType === "tokengo") {
-            result = await runTokenGoAutomation();
+            result = await runTokenGoAutomation(null, true, tokengoOptions || {});
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -238,6 +238,7 @@ async function runSelectedAutomations(
     grokAccountCount = 1,
     grokTempEmailProvider = null,
     codebuddyOptions = null,
+    tokengoOptions = null,
 ) {
     const { createProgressManager } = require("./src/progress");
     
@@ -301,6 +302,9 @@ async function runSelectedAutomations(
             }
             // Existing mode: use github_keys.txt
             return automationMap[type].fn(sharedProgress, proxySettings[type]);
+        }
+        if (type === 'tokengo') {
+            return automationMap[type].fn(sharedProgress, proxySettings[type], tokengoOptions || {});
         }
         return automationMap[type].fn(sharedProgress, proxySettings[type]);
     });
@@ -434,6 +438,7 @@ async function main() {
                     let grokAccountCount = 1;
                     let grokTempEmailProvider = null;
                     let codebuddyOptions = null;
+                    let tokengoOptions = null;
                     
                     if (selected.includes('github')) {
                         const { count } = await inquirer.prompt([
@@ -564,6 +569,69 @@ async function main() {
                             codebuddyOptions = { mode: "existing" };
                         }
                     }
+
+                    if (selected.includes("tokengo")) {
+                        const existingGithub = countGithubKeys();
+                        const choices = [
+                            {
+                                name: `Use existing github_keys.txt (${existingGithub} account${existingGithub === 1 ? "" : "s"})`,
+                                value: "existing",
+                                disabled: existingGithub === 0 ? "file empty / not found" : false,
+                            },
+                            {
+                                name: "Create GitHub account then immediately login TokenGo (per account)",
+                                value: "create",
+                            },
+                        ];
+
+                        const { tokengoMode } = await inquirer.prompt([
+                            {
+                                type: "list",
+                                name: "tokengoMode",
+                                message: "TokenGo account source (GitHub OAuth):",
+                                choices,
+                                default: existingGithub > 0 ? "existing" : "create",
+                            },
+                        ]);
+
+                        if (tokengoMode === "create") {
+                            const { createCount } = await inquirer.prompt([
+                                {
+                                    type: "input",
+                                    name: "createCount",
+                                    message: "How many GitHub accounts to create + login to TokenGo?",
+                                    default: "1",
+                                    validate: (input) => {
+                                        const num = parseInt(input);
+                                        if (isNaN(num) || num <= 0) return "Please enter a valid positive number";
+                                        return true;
+                                    },
+                                },
+                            ]);
+
+                            const { providers } = await inquirer.prompt([
+                                {
+                                    type: "checkbox",
+                                    name: "providers",
+                                    message: "Select temp email providers for GitHub signup (auto = random from selected):",
+                                    choices: [
+                                        { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
+                                        { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                        { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                    ],
+                                },
+                            ]);
+
+                            tokengoOptions = {
+                                mode: "create",
+                                authMode: "github",
+                                createCount: parseInt(createCount),
+                                tempEmailProvider: providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers),
+                            };
+                        } else {
+                            tokengoOptions = { mode: "existing", authMode: "github" };
+                        }
+                    }
                     
                     const proxies = readProxyPool();
                     let proxySettings = {};
@@ -611,6 +679,7 @@ async function main() {
                         grokAccountCount,
                         grokTempEmailProvider,
                         codebuddyOptions,
+                        tokengoOptions,
                     );
                 }
                 // If selection is empty, just continue loop (back to main menu)
