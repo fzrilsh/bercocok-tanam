@@ -331,17 +331,21 @@ async function addAccountToRouter(accountData, browser, log, provider = 'grok-cl
         log('[9Router] Clicking Allow...');
         if (await tryClickText(page, 'Allow', 8000)) {
             log('[9Router] Allow clicked');
-            await sleep(2000);
         } else if (await tryClickText(page, 'Allow All', 3000)) {
             log('[9Router] Allow All clicked');
-            await sleep(2000);
         } else {
             log('[9Router] Allow button not found');
             await page.close();
             return { success: false, error: 'allow button not found' };
         }
         
-        await sleep(2000);
+        await sleep(5000);
+        
+        try {
+            const currentUrl = page.url();
+            log(`[9Router] Post-consent URL: ${currentUrl}`);
+        } catch {}
+        
         await page.close().catch(() => undefined);
 
         log('[9Router] Polling for OAuth completion...');
@@ -355,6 +359,11 @@ async function addAccountToRouter(accountData, browser, log, provider = 'grok-cl
             if (!res.pending) {
                 const errMsg = `${res.error}${res.errorDescription ? ` - ${res.errorDescription}` : ''}`;
                 log(`[9Router] Poll error: ${errMsg}`);
+                if (t === 0) {
+                    log('[9Router] First poll failed, retrying in 10s...');
+                    await sleep(10000);
+                    continue;
+                }
                 return { success: false, error: 'poll error', message: errMsg };
             }
             if ((t + 1) % 10 === 0) {
