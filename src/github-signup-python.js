@@ -54,8 +54,14 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
     
     const provider = tempEmailProvider || config.tempEmailProvider || "auto";
     const tempEmail = await createTempEmail(accountIndex, log, provider);
-    const username = tempEmail.email.split('@')[0];
-    
+
+    if (tempEmail.provider === "gmail") {
+        log("Pre-authenticating Gmail API (first run needs browser consent)...");
+        const { getGmailClient } = require("./gmail-helper");
+        await getGmailClient(log);
+        log("Gmail API ready");
+    }
+
     log(`Temporary email created: ${tempEmail.email}`);
     updateProgress({ step: STEPS.LAUNCHING, email: tempEmail.email });
     
@@ -84,6 +90,12 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
         const chromeBinary = config.chromeExecutablePath || 
                            '/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome';
         args.push('--chrome-binary', chromeBinary);
+        
+        // Pass Node binary + gmail OTP CLI path for gmail provider (Python calls back to read OTP)
+        if (tempEmail.provider === "gmail") {
+            args.push('--node-binary', process.execPath);
+            args.push('--gmail-otp-cli', path.join(__dirname, 'gmail-otp-cli.js'));
+        }
         
         log(`Executing Python script with email: ${tempEmail.email} (provider: ${tempEmail.provider})`);
         if (proxyUrl) log(`Using proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);

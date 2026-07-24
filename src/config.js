@@ -125,10 +125,10 @@ function parseTempEmailProvider(value) {
             if (!Array.isArray(parsed) || parsed.length === 0) {
                 throw new Error("TEMP_EMAIL_PROVIDER array must be non-empty");
             }
-            const validProviders = ["ncaori", "1secemail"];
+            const validProviders = ["ncaori", "1secemail", "gmail"];
             const invalidProviders = parsed.filter(p => !validProviders.includes(p));
             if (invalidProviders.length > 0) {
-                throw new Error(`Invalid providers: ${invalidProviders.join(", ")}. Use "ncaori" or "1secemail"`);
+                throw new Error(`Invalid providers: ${invalidProviders.join(", ")}. Use "ncaori", "1secemail", or "gmail"`);
             }
             return parsed;
         } catch (error) {
@@ -137,9 +137,9 @@ function parseTempEmailProvider(value) {
     }
 
     // Single provider string
-    const validProviders = ["auto", "ncaori", "1secemail"];
+    const validProviders = ["auto", "ncaori", "1secemail", "gmail"];
     if (!validProviders.includes(value)) {
-        throw new Error(`Invalid TEMP_EMAIL_PROVIDER: ${value}. Use "auto", "ncaori", "1secemail", or array like ["ncaori", "1secemail"]`);
+        throw new Error(`Invalid TEMP_EMAIL_PROVIDER: ${value}. Use "auto", "ncaori", "1secemail", "gmail", or array like ["ncaori","1secemail"]`);
     }
     return value;
 }
@@ -172,6 +172,8 @@ function createConfig() {
         sealToken: env.SEAL_TOKEN || '',
         sealKey: env.SEAL_KEY || '',
         turnstileExtPath: env.TURNSTILE_EXT_PATH || '',
+        gmailCredentialsFile: env.GMAIL_CREDENTIALS_FILE || 'creedentials.json',
+        gmailBaseAddress: env.GMAIL_BASE_ADDRESS || '',
         delays: {
             beforeNextClick: toPositiveNumber(env.DELAY_BEFORE_NEXT_CLICK_MS, 1000),
             betweenAccounts: toPositiveNumber(env.DELAY_BETWEEN_ACCOUNTS_MS, 3000),

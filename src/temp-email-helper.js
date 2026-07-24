@@ -1,4 +1,5 @@
 const axios = require("axios");
+const { generatePlusAddress } = require("./gmail-helper");
 
 // Provider 1: ncaori.my.id domains (stateless)
 const NCAORI_DOMAINS = [
@@ -191,6 +192,26 @@ async function createTempEmailSecemail(accountIndex = null, log = console.log) {
 }
 
 /**
+ * Create Gmail plus-address (stateless — OTP read from base Gmail inbox via API)
+ * @returns {{ email, provider: "gmail", userAgent }}
+ */
+async function createTempEmailGmail(accountIndex = null, log = console.log) {
+    log("Creating Gmail plus-address...");
+
+    const userAgent = randomUA();
+    const index = accountIndex !== null ? accountIndex : emailCounter++;
+    const email = generatePlusAddress(index, "github");
+
+    log(`Gmail plus-address created: ${email}`);
+
+    return {
+        email,
+        provider: "gmail",
+        userAgent,
+    };
+}
+
+/**
  * Create temp email with provider selection
  * @param {number|null} accountIndex - Account index for domain rotation
  * @param {function} log - Logging function
@@ -198,7 +219,7 @@ async function createTempEmailSecemail(accountIndex = null, log = console.log) {
  * @returns {Promise<{email: string, provider: string, userAgent: string, csrfToken?: string, cookies?: string}>}
  */
 async function createTempEmail(accountIndex = null, log = console.log, provider = "auto") {
-    const availableProviders = ["ncaori", "1secemail"];
+    const availableProviders = ["ncaori", "1secemail", "gmail"];
     let selectedProvider = provider;
     
     // Handle array input - randomly select from provided array
@@ -210,7 +231,7 @@ async function createTempEmail(accountIndex = null, log = console.log, provider 
         // Validate all providers in array
         const invalidProviders = provider.filter(p => !availableProviders.includes(p));
         if (invalidProviders.length > 0) {
-            throw new Error(`Invalid providers in array: ${invalidProviders.join(", ")}. Use "ncaori" or "1secemail"`);
+            throw new Error(`Invalid providers in array: ${invalidProviders.join(", ")}. Use "ncaori", "1secemail", or "gmail"`);
         }
         
         selectedProvider = provider[Math.floor(Math.random() * provider.length)];
@@ -224,7 +245,7 @@ async function createTempEmail(accountIndex = null, log = console.log, provider 
     // Handle single provider string
     else if (typeof provider === "string") {
         if (!availableProviders.includes(provider)) {
-            throw new Error(`Unknown provider: ${provider}. Use "ncaori", "1secemail", "auto", or array like ["ncaori", "1secemail"]`);
+            throw new Error(`Unknown provider: ${provider}. Use "ncaori", "1secemail", "gmail", "auto", or array like ["ncaori", "1secemail"]`);
         }
         selectedProvider = provider;
     }
@@ -236,6 +257,8 @@ async function createTempEmail(accountIndex = null, log = console.log, provider 
         return await createTempEmailNcaori(accountIndex, log);
     } else if (selectedProvider === "1secemail") {
         return await createTempEmailSecemail(accountIndex, log);
+    } else if (selectedProvider === "gmail") {
+        return await createTempEmailGmail(accountIndex, log);
     } else {
         throw new Error(`Unknown provider after selection: ${selectedProvider}`);
     }
@@ -301,6 +324,20 @@ async function pollMessages(session, log) {
             subject: msg.subject || "",
             body: msg.content || "",
         }));
+    } else if (session.provider === "gmail") {
+        const { readInboxMetadata, readMessageBody } = require("./gmail-helper");
+        const query = `to:${session.email} newer_than:5m`;
+        const metaMsgs = await readInboxMetadata(query, 5, log);
+        const results = [];
+        for (const msg of metaMsgs) {
+            const body = await readMessageBody(msg.id, log);
+            results.push({
+                from: msg.from || "",
+                subject: msg.subject || "",
+                body: body || "",
+            });
+        }
+        return results;
     } else {
         throw new Error(`Unknown provider: ${session.provider}`);
     }
@@ -346,6 +383,13 @@ async function waitForEmail(sessionOrEmail, options = {}) {
         } else if (isSecemail) {
             log(`Warning: 1secemail email without session - cannot poll (need csrfToken/cookies)`);
             throw new Error("1secemail emails require session object with csrfToken and cookies");
+        } else if (email.includes("@gmail.com") || email.includes("+")) {
+            session = {
+                email,
+                provider: "gmail",
+                userAgent: randomUA(),
+            };
+            log(`Detected gmail provider from email address`);
         } else {
             log(`Warning: Unknown email domain, attempting ncaori...`);
             session = {
