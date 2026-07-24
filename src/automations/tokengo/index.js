@@ -19,10 +19,10 @@ const {
     releaseProxy,
 } = require("../../utils");
 const { launchBrowser } = require("../../browser");
-const { completeGoogleLogin } = require("../../google-login");
+const { completeGoogleLogin } = require("../../providers/google/login");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
-const { createRouter } = require("../../9router-helper");
+const { createRouter } = require("../../providers/router");
 
 const QUEUE_RETRY_DELAY_MS = 500;
 const TOKENGO_DASHBOARD = "https://dashboard.tokengo.com";
@@ -288,7 +288,7 @@ async function executeGoogleOAuthAndIntercept(page, account, oauthUrl, oauthStat
 async function handlePostLogin(page, log) {
     const config = getConfig();
     const SHARED_SELECTORS = require("../../config").SHARED_SELECTORS;
-    const { clickSelector, clickFirstVisibleSelector } = require("../../google-login");
+    const { clickSelector, clickFirstVisibleSelector } = require("../../providers/google/login");
     
     try {
         log("Clicking I Understand...");

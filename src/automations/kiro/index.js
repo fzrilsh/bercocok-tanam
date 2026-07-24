@@ -20,10 +20,10 @@ const {
     completeGoogleLogin,
     clickSelector,
     clickFirstVisibleSelector,
-} = require("../../google-login");
+} = require("../../providers/google/login");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
-const { createRouter } = require("../../9router-helper");
+const { createRouter } = require("../../providers/router");
 
 const TARGET_URL = "https://app.kiro.dev/signin/";
 const QUEUE_RETRY_DELAY_MS = 500; // Wait before retrying locked account from queue

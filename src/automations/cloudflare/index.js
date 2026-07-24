@@ -19,10 +19,10 @@ const {
     completeGoogleLogin,
     clickSelector,
     clickFirstVisibleSelector,
-} = require("../../google-login");
+} = require("../../providers/google/login");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
-const { createRouter } = require("../../9router-helper");
+const { createRouter } = require("../../providers/router");
 const fs = require("fs");
 
 const TARGET_URL = "https://dash.cloudflare.com/login";

@@ -11,7 +11,7 @@ const {
 } = require("../../utils");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
-const { createTempEmail } = require("../../temp-email-helper");
+const { createTempEmail } = require("../../providers/email");
 
 const PROJECT_ROOT = path.join(__dirname, '../../..');
 const PYTHON_SCRIPT = path.join(PROJECT_ROOT, 'scripts', 'github', 'signup.py');
@@ -57,7 +57,7 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
 
     if (tempEmail.provider === "gmail") {
         log("Pre-authenticating Gmail API (first run needs browser consent)...");
-        const { getGmailClient } = require("./gmail-helper");
+        const { getGmailClient } = require("../../providers/email/gmail-helper");
         await getGmailClient(log);
         log("Gmail API ready");
     }

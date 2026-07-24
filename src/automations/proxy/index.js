@@ -19,7 +19,7 @@ const { launchBrowser } = require("../../browser");
 const {
     clickSelector,
     clickFirstVisibleSelector,
-} = require("../../google-login");
+} = require("../../providers/google/login");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
 

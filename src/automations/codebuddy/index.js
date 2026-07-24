@@ -16,11 +16,11 @@ const {
     releaseProxy,
 } = require("../../utils");
 const { launchBrowser, setupConditionalProxyInterception } = require("../../browser");
-const { clickSelector } = require("../../google-login");
+const { clickSelector } = require("../../providers/google/login");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
-const { waitForGitHubDeviceOTP } = require("../../temp-email-helper");
-const { createRouter } = require("../../9router-helper");
+const { waitForGitHubDeviceOTP } = require("../../providers/email");
+const { createRouter } = require("../../providers/router");
 
 const QUEUE_RETRY_DELAY_MS = 500;
 const ROOT_DIR = path.resolve(__dirname, "..");

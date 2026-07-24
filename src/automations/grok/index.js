@@ -2,8 +2,8 @@ const { mkdirSync, mkdtempSync, appendFileSync } = require('fs');
 const { tmpdir } = require('os');
 const { join } = require('path');
 const { getConfig } = require('../../config');
-const { createTempEmail } = require('../../temp-email-helper');
-const { readInboxMetadata, readMessageBody } = require('../../gmail-helper');
+const { createTempEmail } = require('../../providers/email');
+const { readInboxMetadata, readMessageBody } = require('../../providers/email/gmail-helper');
 const { resolveTurnstileExt, cleanupSealedTemps } = require('./seal-turnstile');
 const {
     launchChrome,
@@ -16,9 +16,9 @@ const {
     pageLooksBlocked,
     sleep,
 } = require('./utils');
-const { STEPS } = require('../../progress');
+const { STEPS } = require('../../cli/progress');
 const { createFileLogger } = require('../../utils');
-const { addAccountToRouter } = require('../../9router-helper');
+const { addAccountToRouter } = require('../../providers/router');
 
 const PROJECT_ROOT = join(__dirname, '../../..');
 const GROK_KEYS_FILE = join(PROJECT_ROOT, 'grok_keys.txt');
@@ -148,7 +148,7 @@ class Mail {
                     }
                 }
             } else if (this.provider === 'mailcx') {
-                const { pollMessages } = require('./temp-email-helper');
+                const { pollMessages } = require('../../providers/email');
                 const messages = await pollMessages(this.tempEmailData, this.log);
                 this.log(`[Grok Mail] mailcx: ${messages.length} messages`);
                 for (const msg of messages) {
