@@ -369,7 +369,7 @@ async function addAccountToRouter(accountData, browser, log, provider = 'grok-cl
             if ((t + 1) % 10 === 0) {
                 log(`[9Router] Polling... ${t + 1}/${maxAttempts} attempts`);
             }
-            await sleep(5000);
+        await sleep(3000);
         }
         
         log('[9Router] Poll timeout (5 minutes)');

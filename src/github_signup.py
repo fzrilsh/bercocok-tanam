@@ -413,7 +413,7 @@ chrome.webRequest.onAuthRequired.addListener(
         
         for selector in cookie_selectors:
             try:
-                button = WebDriverWait(self.driver, 2).until(
+                button = WebDriverWait(self.driver, 0.3).until(
                     EC.element_to_be_clickable((By.XPATH, selector))
                 )
                 print(f"Found cookie consent button: {selector}")

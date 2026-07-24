@@ -724,16 +724,18 @@ async function handleGitHubAuthorize(page, log) {
         el.scrollIntoView({ behavior: "smooth", block: "center" });
         el.focus();
     }, authorizeBtn);
-    await sleep(1500);
+    await sleep(1000);
 
+    log("Waiting for authorize button to be enabled...");
     try {
         await page.waitForFunction(
             (el) => !el.disabled && !el.getAttribute("disabled"),
-            { timeout: 10000 },
+            { timeout: 60000 },
             authorizeBtn,
         );
+        log("Authorize button enabled");
     } catch (_) {
-        log("Authorize button still disabled, trying click anyway");
+        log("Authorize button still disabled after 60s, trying click anyway");
     }
 
     try {
