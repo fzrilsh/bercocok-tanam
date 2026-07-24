@@ -27,7 +27,7 @@ const { createRouter } = require("./9router-helper");
 const QUEUE_RETRY_DELAY_MS = 500;
 const TOKENGO_DASHBOARD = "https://dashboard.tokengo.com";
 const TOKENGO_API = `${TOKENGO_DASHBOARD}/api`;
-const GOOGLE_OAUTH_CLIENT_ID = "179756334592-01g164h5sapm5iaj7rvvd0vg864rfpte.apps.googleusercontent.com";
+const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || "179756334592-01g164h5sapm5iaj7rvvd0vg864rfpte.apps.googleusercontent.com";
 const MAX_PROXY_ROTATION_ATTEMPTS = 5; // Max times to retry with different proxies
 
 // Custom error class to signal proxy rate limit (429 after max retries)
