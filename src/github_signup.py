@@ -63,7 +63,7 @@ class TempEmail:
         print("Reading OTP via Gmail API (Node helper)...")
         import subprocess
         result = subprocess.run(
-            [self.node_binary, self.gmail_otp_cli, '--type', 'launch_code'],
+            [self.node_binary, self.gmail_otp_cli, '--type', 'launch_code', '--email', self.email],
             stdout=subprocess.PIPE, text=True, timeout=300
         )
         

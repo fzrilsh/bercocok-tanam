@@ -325,13 +325,19 @@ async function pollMessages(session, log) {
             body: msg.content || "",
         }));
     } else if (session.provider === "gmail") {
-        const { readInbox } = require("./gmail-helper");
-        const messages = await readInbox("newer_than:1h", 10, log);
-        return messages.map(msg => ({
-            from: msg.from || "",
-            subject: msg.subject || "",
-            body: msg.body || "",
-        }));
+        const { readInboxMetadata, readMessageBody } = require("./gmail-helper");
+        const query = `to:${session.email} newer_than:5m`;
+        const metaMsgs = await readInboxMetadata(query, 5, log);
+        const results = [];
+        for (const msg of metaMsgs) {
+            const body = await readMessageBody(msg.id, log);
+            results.push({
+                from: msg.from || "",
+                subject: msg.subject || "",
+                body: body || "",
+            });
+        }
+        return results;
     } else {
         throw new Error(`Unknown provider: ${session.provider}`);
     }

@@ -3,7 +3,7 @@ const { tmpdir } = require('os');
 const { join } = require('path');
 const { getConfig } = require('./config');
 const { createTempEmail } = require('./temp-email-helper');
-const { readInbox } = require('./gmail-helper');
+const { readInboxMetadata, readMessageBody } = require('./gmail-helper');
 const { resolveTurnstileExt, cleanupSealedTemps } = require('./seal-turnstile');
 const {
     launchChrome,
@@ -131,11 +131,17 @@ class Mail {
                     }
                 }
             } else if (this.provider === 'gmail') {
-                const messages = await readInbox('from:x.ai newer_than:1h', 10, this.log);
-                this.log(`[Grok Mail] gmail: ${messages.length} messages`);
-                for (const msg of messages) {
-                    const content = (msg.subject || '') + '\n' + (msg.body || '');
-                    const code = extractOtp(content);
+                const query = `to:${this.addr} from:x.ai newer_than:5m`;
+                const metaMsgs = await readInboxMetadata(query, 5, this.log);
+                this.log(`[Grok Mail] gmail: ${metaMsgs.length} messages`);
+                for (const msg of metaMsgs) {
+                    const codeFromSubject = extractOtp(msg.subject || '');
+                    if (codeFromSubject) {
+                        this.log(`[Grok Mail] OTP found in subject: ${codeFromSubject}`);
+                        return codeFromSubject;
+                    }
+                    const body = await readMessageBody(msg.id, this.log);
+                    const code = extractOtp((msg.subject || '') + '\n' + body);
                     if (code) {
                         this.log(`[Grok Mail] OTP found in gmail message: ${code}`);
                         return code;
