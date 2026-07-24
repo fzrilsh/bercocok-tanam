@@ -352,31 +352,53 @@ email|password | GitHub | 2026-07-24T14:40:10.890Z | Account creation failed
 bercocok-tanam/
 ├── index.js              # Main entry point with menu system
 ├── src/
-│   ├── 9router-helper.js # Centralized 9Router integration helper
-│   ├── browser.js        # Browser launching with stealth mode
-│   ├── cloudflare.js     # Cloudflare token harvesting logic
-│   ├── codebuddy.js      # Codebuddy OAuth token harvesting logic
-│   ├── config.js         # Configuration management
-│   ├── github-signup-python.js  # GitHub automation Node.js wrapper
-│   ├── github_signup.py  # GitHub automation Python/Playwright script
-│   ├── gmail-helper.js   # Gmail API integration for OTP reading
-│   ├── gmail-otp-cli.js  # Gmail OTP CLI subprocess handler
-│   ├── google-login.js   # Google authentication helpers
-│   ├── grok.js           # Grok account creation automation
-│   ├── grok-utils.js     # Grok automation utility functions
-│   ├── kiro.js           # Kiro token harvesting logic
-│   ├── proxy.js          # Proxy automation (webshare.io)
-│   ├── seal-crypto.js    # Turnstile extension decryption
-│   ├── seal-turnstile.js # Turnstile extension resolver
-│   ├── temp-email-helper.js  # Multi-provider temp email integration
-│   ├── tokengo.js        # TokenGo API key harvesting with proxy rotation
-│   ├── progress.js       # Progress bar and status display
-│   ├── reporter.js       # Report generation and formatting
-│   ├── settings.js       # Interactive settings menu
-│   └── utils.js          # Utility functions and helpers
+│   ├── automations/      # All automation implementations
+│   │   ├── cloudflare/
+│   │   │   └── index.js
+│   │   ├── codebuddy/
+│   │   │   └── index.js
+│   │   ├── github/
+│   │   │   └── index.js
+│   │   ├── grok/
+│   │   │   ├── index.js
+│   │   │   ├── utils.js
+│   │   │   ├── seal-crypto.js
+│   │   │   └── seal-turnstile.js
+│   │   ├── kiro/
+│   │   │   └── index.js
+│   │   ├── proxy/
+│   │   │   └── index.js
+│   │   └── tokengo/
+│   │       └── index.js
+│   ├── providers/        # External service integrations
+│   │   ├── email/
+│   │   │   ├── index.js        # Main temp email helper
+│   │   │   ├── gmail-helper.js # Gmail API integration
+│   │   │   └── gmail-otp-cli.js # Gmail OTP CLI tool
+│   │   ├── google/
+│   │   │   └── login.js        # Google authentication helpers
+│   │   └── router/
+│   │       └── index.js        # 9Router integration
+│   ├── browser/
+│   │   └── index.js      # Browser launching with stealth mode
+│   ├── cli/              # CLI interface components
+│   │   ├── progress.js   # Progress bars and status display
+│   │   ├── reporter.js   # Report generation and formatting
+│   │   └── settings.js   # Interactive settings menu
+│   ├── config/
+│   │   └── index.js      # Configuration management
+│   └── utils/
+│       └── index.js      # Utility functions and helpers
+├── scripts/
+│   └── github/
+│       └── signup.py     # GitHub automation Python script
 ├── venv/                 # Python virtual environment (auto-created)
+├── docs/                 # Documentation
+│   ├── GROK-CLI-OAUTH-ANALYSIS.md
+│   ├── RESTRUCTURE-PLAN.md
+│   └── automations/
 ├── assets/
-│   └── screenshot.png    # CLI screenshot
+│   └── screenshot.png
 ├── accounts.txt          # Account list (user-created)
 ├── kiro_keys.txt         # Kiro tokens output (auto-generated)
 ├── cloudflare_keys.txt   # Cloudflare tokens output (auto-generated)
@@ -389,6 +411,7 @@ bercocok-tanam/
 ├── .env                  # Configuration (user-created)
 ├── .env.example          # Configuration template
 ├── eslint.config.js      # ESLint configuration
+├── LICENSE
 └── package.json          # Dependencies and scripts
 ```
 

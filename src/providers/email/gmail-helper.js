@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const { google } = require("googleapis");
-const { getConfig, ROOT_DIR } = require("./config");
+const { getConfig, ROOT_DIR } = require("../../config");
 
 const SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"];
 const TOKEN_PATH = path.join(ROOT_DIR, "gmail-token.json");

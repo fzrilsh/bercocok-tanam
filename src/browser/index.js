@@ -9,8 +9,8 @@ const { HttpsProxyAgent } = require("https-proxy-agent");
 
 puppeteer.use(StealthPlugin());
 
-const { getConfig } = require("./config");
-const { randomUA } = require("./utils");
+const { getConfig } = require("../config");
+const { randomUA } = require("../utils");
 
 const createUserDataDir = () =>
     path.join(os.tmpdir(), `puppeteer_bt_${crypto.randomUUID()}`);

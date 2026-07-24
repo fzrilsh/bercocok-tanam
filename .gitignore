@@ -9,7 +9,16 @@ package-lock.json
 logs/
 *.log
 
-# Accounts & Keys
+# Output directory (new structure)
+output/keys/*.txt
+output/errors/*.txt
+output/logs/*.log
+# Keep structure
+!output/keys/.gitkeep
+!output/errors/.gitkeep
+!output/logs/.gitkeep
+
+# Accounts & Keys (old structure - temporary during migration)
 accounts.txt
 accounts.json
 *_keys.txt

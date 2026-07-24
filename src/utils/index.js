@@ -1,6 +1,6 @@
 const fs = require("fs");
 const path = require("path");
-const { getConfig, ROOT_DIR } = require("./config");
+const { getConfig, ROOT_DIR } = require("../config");
 
 const USER_AGENTS = [
     // Chrome Windows

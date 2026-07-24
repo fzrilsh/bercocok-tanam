@@ -1,4 +1,4 @@
-const { getConfig } = require('./config');
+const { getConfig } = require('../../config');
 
 class NineRouter {
     constructor(baseUrl, password, provider = null) {

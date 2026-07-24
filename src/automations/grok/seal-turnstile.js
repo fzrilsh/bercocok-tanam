@@ -1,10 +1,10 @@
 const { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } = require('fs');
 const { tmpdir } = require('os');
 const { join } = require('path');
-const { getConfig } = require('./config');
+const { getConfig } = require('../../config');
 const { parseKeyB64, parseSealedJson, unsealUtf8 } = require('./seal-crypto');
 
-const PROJECT_ROOT = join(__dirname, '..');
+const PROJECT_ROOT = join(__dirname, '../../..');
 const ENC_DIR = join(PROJECT_ROOT, 'turnstile');
 
 const temps = new Set();

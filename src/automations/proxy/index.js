@@ -1,5 +1,5 @@
 const fs = require("fs");
-const { getConfig, getResultFile, SHARED_SELECTORS } = require("./config");
+const { getConfig, getResultFile, SHARED_SELECTORS } = require("../../config");
 const {
     sleep,
     readAccounts,
@@ -14,14 +14,14 @@ const {
     ensureFileExists,
     acquireProxy,
     releaseProxy,
-} = require("./utils");
-const { launchBrowser } = require("./browser");
+} = require("../../utils");
+const { launchBrowser } = require("../../browser");
 const {
     clickSelector,
     clickFirstVisibleSelector,
-} = require("./google-login");
-const { STEPS, createProgressManager } = require("./progress");
-const { printReport } = require("./reporter");
+} = require("../../google-login");
+const { STEPS, createProgressManager } = require("../../cli/progress");
+const { printReport } = require("../../cli/reporter");
 
 const TARGET_URL = "https://dashboard.webshare.io/register";
 const WORKER_STAGGER_MS = 10 * 1000; // 10 seconds between worker starts to avoid rate limiting

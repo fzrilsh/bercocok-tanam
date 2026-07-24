@@ -1,20 +1,20 @@
 const { spawn } = require("child_process");
 const path = require("path");
 const fs = require("fs");
-const { getConfig } = require("./config");
+const { getConfig } = require("../../config");
 const {
     sleep,
     createFileLogger,
     formatDuration,
     acquireProxy,
     releaseProxy,
-} = require("./utils");
-const { STEPS, createProgressManager } = require("./progress");
-const { printReport } = require("./reporter");
-const { createTempEmail } = require("./temp-email-helper");
+} = require("../../utils");
+const { STEPS, createProgressManager } = require("../../cli/progress");
+const { printReport } = require("../../cli/reporter");
+const { createTempEmail } = require("../../temp-email-helper");
 
-const PROJECT_ROOT = path.join(__dirname, '..');
-const PYTHON_SCRIPT = path.join(PROJECT_ROOT, 'src', 'github_signup.py');
+const PROJECT_ROOT = path.join(__dirname, '../../..');
+const PYTHON_SCRIPT = path.join(PROJECT_ROOT, 'scripts', 'github', 'signup.py');
 const PYTHON_VENV_PATH = path.join(PROJECT_ROOT, 'venv', 'bin', 'python3');
 const GITHUB_KEYS_FILE = path.join(PROJECT_ROOT, 'github_keys.txt');
 

@@ -1,5 +1,5 @@
-const { getConfig } = require("./config");
-const { sleep } = require("./utils");
+const { getConfig } = require("../../config");
+const { sleep } = require("../../utils");
 
 const GOOGLE_SELECTORS = {
     emailInput: "#identifierId",

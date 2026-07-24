@@ -2,7 +2,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const axios = require("axios");
 const { HttpsProxyAgent } = require("https-proxy-agent");
-const { getConfig, getResultFile } = require("./config");
+const { getConfig, getResultFile } = require("../../config");
 const {
     sleep,
     readAccounts,
@@ -17,12 +17,12 @@ const {
     ensureFileExists,
     acquireProxy,
     releaseProxy,
-} = require("./utils");
-const { launchBrowser } = require("./browser");
-const { completeGoogleLogin } = require("./google-login");
-const { STEPS, createProgressManager } = require("./progress");
-const { printReport } = require("./reporter");
-const { createRouter } = require("./9router-helper");
+} = require("../../utils");
+const { launchBrowser } = require("../../browser");
+const { completeGoogleLogin } = require("../../google-login");
+const { STEPS, createProgressManager } = require("../../cli/progress");
+const { printReport } = require("../../cli/reporter");
+const { createRouter } = require("../../9router-helper");
 
 const QUEUE_RETRY_DELAY_MS = 500;
 const TOKENGO_DASHBOARD = "https://dashboard.tokengo.com";
@@ -287,8 +287,8 @@ async function executeGoogleOAuthAndIntercept(page, account, oauthUrl, oauthStat
 
 async function handlePostLogin(page, log) {
     const config = getConfig();
-    const SHARED_SELECTORS = require("./config").SHARED_SELECTORS;
-    const { clickSelector, clickFirstVisibleSelector } = require("./google-login");
+    const SHARED_SELECTORS = require("../../config").SHARED_SELECTORS;
+    const { clickSelector, clickFirstVisibleSelector } = require("../../google-login");
     
     try {
         log("Clicking I Understand...");
@@ -1061,7 +1061,7 @@ async function runTokenGoAutomation(sharedProgress = null, useProxy = true, opti
     let accounts;
 
     if (options.mode === "create") {
-        const { runGitHubSignupAutomation } = require("./github-signup-python");
+        const { runGitHubSignupAutomation } = require("../../github-signup-python");
         const createCount = options.createCount || 1;
         const tempEmailProvider = options.tempEmailProvider || null;
 
@@ -1077,7 +1077,7 @@ async function runTokenGoAutomation(sharedProgress = null, useProxy = true, opti
     if (authMode === "github") {
         const path = require("path");
         const fs = require("fs");
-        const GITHUB_KEYS_FILE = path.join(require("./config").ROOT_DIR, "github_keys.txt");
+        const GITHUB_KEYS_FILE = path.join(require("../../config").ROOT_DIR, "github_keys.txt");
 
         if (!fs.existsSync(GITHUB_KEYS_FILE)) {
             if (!sharedProgress) {

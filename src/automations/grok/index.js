@@ -1,9 +1,9 @@
 const { mkdirSync, mkdtempSync, appendFileSync } = require('fs');
 const { tmpdir } = require('os');
 const { join } = require('path');
-const { getConfig } = require('./config');
-const { createTempEmail } = require('./temp-email-helper');
-const { readInboxMetadata, readMessageBody } = require('./gmail-helper');
+const { getConfig } = require('../../config');
+const { createTempEmail } = require('../../temp-email-helper');
+const { readInboxMetadata, readMessageBody } = require('../../gmail-helper');
 const { resolveTurnstileExt, cleanupSealedTemps } = require('./seal-turnstile');
 const {
     launchChrome,
@@ -15,12 +15,12 @@ const {
     tryClickText,
     pageLooksBlocked,
     sleep,
-} = require('./grok-utils');
-const { STEPS } = require('./progress');
-const { createFileLogger } = require('./utils');
-const { addAccountToRouter } = require('./9router-helper');
+} = require('./utils');
+const { STEPS } = require('../../progress');
+const { createFileLogger } = require('../../utils');
+const { addAccountToRouter } = require('../../9router-helper');
 
-const PROJECT_ROOT = join(__dirname, '..');
+const PROJECT_ROOT = join(__dirname, '../../..');
 const GROK_KEYS_FILE = join(PROJECT_ROOT, 'grok_keys.txt');
 const SIGNUP_URL = 'https://accounts.x.ai/sign-up?redirect=grok-com';
 

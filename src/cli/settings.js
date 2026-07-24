@@ -1,5 +1,5 @@
-const { getConfig, reloadConfig, updateEnvValue } = require("./config");
-const { readAccounts } = require("./utils");
+const { getConfig, reloadConfig, updateEnvValue } = require("../config");
+const { readAccounts } = require("../utils");
 const path = require("path");
 
 function displaySettingsPanel(config, accounts) {

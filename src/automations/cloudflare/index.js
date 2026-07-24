@@ -1,4 +1,4 @@
-const { getConfig, getResultFile, SHARED_SELECTORS } = require("./config");
+const { getConfig, getResultFile, SHARED_SELECTORS } = require("../../config");
 const {
     sleep,
     readAccounts,
@@ -13,16 +13,16 @@ const {
     tryAcquireAccountLock,
     acquireProxy,
     releaseProxy,
-} = require("./utils");
-const { launchBrowser } = require("./browser");
+} = require("../../utils");
+const { launchBrowser } = require("../../browser");
 const {
     completeGoogleLogin,
     clickSelector,
     clickFirstVisibleSelector,
-} = require("./google-login");
-const { STEPS, createProgressManager } = require("./progress");
-const { printReport } = require("./reporter");
-const { createRouter } = require("./9router-helper");
+} = require("../../google-login");
+const { STEPS, createProgressManager } = require("../../cli/progress");
+const { printReport } = require("../../cli/reporter");
+const { createRouter } = require("../../9router-helper");
 const fs = require("fs");
 
 const TARGET_URL = "https://dash.cloudflare.com/login";

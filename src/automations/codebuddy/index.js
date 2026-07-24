@@ -1,4 +1,4 @@
-const { getConfig } = require("./config");
+const { getConfig } = require("../../config");
 const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
@@ -14,13 +14,13 @@ const {
     tryAcquireAccountLock,
     acquireProxy,
     releaseProxy,
-} = require("./utils");
-const { launchBrowser, setupConditionalProxyInterception } = require("./browser");
-const { clickSelector } = require("./google-login");
-const { STEPS, createProgressManager } = require("./progress");
-const { printReport } = require("./reporter");
-const { waitForGitHubDeviceOTP } = require("./temp-email-helper");
-const { createRouter } = require("./9router-helper");
+} = require("../../utils");
+const { launchBrowser, setupConditionalProxyInterception } = require("../../browser");
+const { clickSelector } = require("../../google-login");
+const { STEPS, createProgressManager } = require("../../cli/progress");
+const { printReport } = require("../../cli/reporter");
+const { waitForGitHubDeviceOTP } = require("../../temp-email-helper");
+const { createRouter } = require("../../9router-helper");
 
 const QUEUE_RETRY_DELAY_MS = 500;
 const ROOT_DIR = path.resolve(__dirname, "..");
@@ -1259,7 +1259,7 @@ async function runCodebuddyCreateAndImport(
 ) {
     const config = getConfig();
     const logger = createFileLogger();
-    const { createGitHubAccountViaPython } = require("./github-signup-python");
+    const { createGitHubAccountViaPython } = require("../../github-signup-python");
 
     if (createCount <= 0) {
         if (!sharedProgress) console.log("Create count must be > 0");

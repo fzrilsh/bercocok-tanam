@@ -1,6 +1,6 @@
 const axios = require("axios");
 const { generatePlusAddress } = require("./gmail-helper");
-const { getConfig } = require("./config");
+const { getConfig } = require("../../config");
 
 // Provider 1: ncaori.my.id domains (stateless)
 const NCAORI_DOMAINS = [
