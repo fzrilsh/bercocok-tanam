@@ -246,11 +246,10 @@ async function flow(page, accountIndex, log, updateProgress, tempEmailProvider) 
 
     updateProgress({ step: STEPS.LOGGING_IN, email: 'Filling name & password...' });
     log('[Grok] Step 6: Fill name & password');
-    const local = addr.split('@')[0];
-    const parts = local.split(/[._\-]/);
-    const given = (parts[0] || 'User').charAt(0).toUpperCase() + (parts[0] || 'User').slice(1).toLowerCase();
-    const famRaw = parts.length > 1 ? parts[1] : 'Account';
-    const family = famRaw.charAt(0).toUpperCase() + famRaw.slice(1).toLowerCase();
+    const names = ['Alex','Jordan','Taylor','Morgan','Riley','Casey','Jamie','Avery','Quinn','Drew','Sam','Reese','Blake','Cameron','Skyler','Hayden','Parker','Rowan','Sage','Finley'];
+    const surnames = ['Smith','Johnson','Brown','Davis','Wilson','Moore','Taylor','Anderson','Thomas','Lee','Walker','Hall','Young','King','Wright','Lopez','Hill','Green','Adams','Baker'];
+    const given = names[Math.floor(Math.random() * names.length)];
+    const family = surnames[Math.floor(Math.random() * surnames.length)];
 
     await fillInput(page, 'input[name=givenName]', given);
     await fillInput(page, 'input[name=familyName]', family);
