@@ -101,6 +101,8 @@ async function readInbox(query, maxResults = 10, log = console.log) {
     const messages = listRes.data.messages || [];
     if (messages.length === 0) return [];
 
+    log(`[Gmail] Found ${messages.length} messages for query "${query}"`);
+
     const results = [];
     for (const msg of messages) {
         const full = await gmail.users.messages.get({
@@ -113,6 +115,8 @@ async function readInbox(query, maxResults = 10, log = console.log) {
         const from = headers.find((h) => h.name === "From")?.value || "";
         const subject = headers.find((h) => h.name === "Subject")?.value || "";
         const to = headers.find((h) => h.name === "To")?.value || "";
+
+        log(`[Gmail] Message: from="${from}" subject="${subject}"`);
 
         let body = "";
         const payload = full.data.payload;
@@ -215,7 +219,7 @@ async function waitForGitHubOTP(maxAttempts = 30, log = console.log) {
     log("[Gmail] Waiting for GitHub launch code...");
     const code = await waitForEmail({
         matcher: GmailMatchers.launchCode,
-        query: "from:noreply@github.com newer_than:1h",
+        query: "from:github.com newer_than:5m",
         maxAttempts,
         pollInterval: 5000,
         log,

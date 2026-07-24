@@ -54,7 +54,14 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
     
     const provider = tempEmailProvider || config.tempEmailProvider || "auto";
     const tempEmail = await createTempEmail(accountIndex, log, provider);
-    
+
+    if (tempEmail.provider === "gmail") {
+        log("Pre-authenticating Gmail API (first run needs browser consent)...");
+        const { getGmailClient } = require("./gmail-helper");
+        await getGmailClient(log);
+        log("Gmail API ready");
+    }
+
     log(`Temporary email created: ${tempEmail.email}`);
     updateProgress({ step: STEPS.LAUNCHING, email: tempEmail.email });
     
