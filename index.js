@@ -240,7 +240,7 @@ async function runSelectedAutomations(
     codebuddyOptions = null,
     tokengoOptions = null,
 ) {
-    const { createProgressManager } = require("./src/progress");
+    const { createProgressManager } = require("./src/cli/progress");
     
     const automationMap = {
         kiro: { name: 'Kiro', fn: runKiroAutomation },
