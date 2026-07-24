@@ -461,6 +461,7 @@ async function main() {
                                 choices: [
                                     { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                     { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                    { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
                                 ],
                             },
                         ]);
@@ -493,6 +494,7 @@ async function main() {
                                 choices: [
                                     { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                     { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                    { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
                                 ],
                             },
                         ]);
@@ -548,6 +550,7 @@ async function main() {
                                     choices: [
                                         { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                         { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                        { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
                                     ],
                                 },
                             ]);
