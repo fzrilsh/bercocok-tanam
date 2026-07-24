@@ -407,7 +407,7 @@ async function main() {
                                 checked: true
                             },
                             { 
-                                name: "Codebuddy Automation (Requires Residential Proxy)", 
+                                name: "Codebuddy Automation", 
                                 value: "codebuddy"
                             },
                             { 
