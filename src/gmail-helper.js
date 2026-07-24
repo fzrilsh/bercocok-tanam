@@ -71,14 +71,40 @@ function getBaseAddress() {
     return config.gmailBaseAddress || "";
 }
 
-function generatePlusAddress(accountIndex = 0, prefix = "github") {
+const COUNTER_PATH = path.join(ROOT_DIR, "gmail-counter.json");
+
+function readCounter() {
+    try {
+        if (fs.existsSync(COUNTER_PATH)) {
+            const data = JSON.parse(fs.readFileSync(COUNTER_PATH, "utf-8"));
+            return data.count || 0;
+        }
+    } catch {}
+    return 0;
+}
+
+function writeCounter(count) {
+    try {
+        fs.writeFileSync(COUNTER_PATH, JSON.stringify({ count }));
+    } catch {}
+}
+
+function generatePlusAddress(accountIndex = null, prefix = "github") {
     const base = getBaseAddress();
     if (!base) throw new Error("GMAIL_BASE_ADDRESS not configured");
 
     const [localPart, domain] = base.split("@");
     if (!domain) throw new Error(`Invalid GMAIL_BASE_ADDRESS: ${base}`);
 
-    const suffix = String(accountIndex + 1).padStart(6, "0");
+    let idx;
+    if (accountIndex !== null) {
+        idx = accountIndex;
+    } else {
+        idx = readCounter();
+        writeCounter(idx + 1);
+    }
+
+    const suffix = String(idx + 1).padStart(6, "0");
     return `${localPart}+${prefix}${suffix}@${domain}`;
 }
 

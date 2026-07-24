@@ -199,8 +199,7 @@ async function createTempEmailGmail(accountIndex = null, log = console.log) {
     log("Creating Gmail plus-address...");
 
     const userAgent = randomUA();
-    const index = accountIndex !== null ? accountIndex : emailCounter++;
-    const email = generatePlusAddress(index, "github");
+    const email = generatePlusAddress(null, "github");
 
     log(`Gmail plus-address created: ${email}`);
 
