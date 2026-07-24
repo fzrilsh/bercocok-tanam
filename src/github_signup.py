@@ -895,6 +895,10 @@ chrome.webRequest.onAuthRequired.addListener(
             self.local_proxy_server = None
 
 
+def generate_username():
+    chars = string.ascii_lowercase + string.digits
+    return ''.join(random.choices(chars, k=10))
+
 def generate_password():
     chars = string.ascii_letters + string.digits
     password = 'GhPass' + ''.join(random.choices(chars, k=16)) + '!@#'
@@ -904,7 +908,7 @@ def generate_password():
 def create_github_account(email, provider, csrf_token=None, cookies=None, headless=False, proxy=None, chrome_binary=None, node_binary=None, gmail_otp_cli=None):
     temp_email = TempEmail(email, provider, csrf_token, cookies, node_binary, gmail_otp_cli)
     
-    username = temp_email.email.split('@')[0]
+    username = generate_username()
     password = generate_password()
     
     print(f"\nAccount Details:")

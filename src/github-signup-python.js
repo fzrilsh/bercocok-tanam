@@ -54,7 +54,6 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
     
     const provider = tempEmailProvider || config.tempEmailProvider || "auto";
     const tempEmail = await createTempEmail(accountIndex, log, provider);
-    const username = tempEmail.email.split('@')[0];
     
     log(`Temporary email created: ${tempEmail.email}`);
     updateProgress({ step: STEPS.LAUNCHING, email: tempEmail.email });
