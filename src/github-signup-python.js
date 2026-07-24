@@ -85,6 +85,12 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
                            '/Volumes/StorageTeamGroup/Browser/Google Chrome.app/Contents/MacOS/Google Chrome';
         args.push('--chrome-binary', chromeBinary);
         
+        // Pass Node binary + gmail OTP CLI path for gmail provider (Python calls back to read OTP)
+        if (tempEmail.provider === "gmail") {
+            args.push('--node-binary', process.execPath);
+            args.push('--gmail-otp-cli', path.join(__dirname, 'gmail-otp-cli.js'));
+        }
+        
         log(`Executing Python script with email: ${tempEmail.email} (provider: ${tempEmail.provider})`);
         if (proxyUrl) log(`Using proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);
         

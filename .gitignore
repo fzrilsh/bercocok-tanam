@@ -20,6 +20,11 @@ warm_cookies.json
 # Turnstile extension (Grok automation)
 turnstile/
 
+# Gmail API credentials & tokens
+creedentials.json
+credentials.json
+gmail-token.json
+
 # Python
 venv/
 __pycache__/

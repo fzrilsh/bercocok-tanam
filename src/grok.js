@@ -3,6 +3,7 @@ const { tmpdir } = require('os');
 const { join } = require('path');
 const { getConfig } = require('./config');
 const { createTempEmail } = require('./temp-email-helper');
+const { readInbox } = require('./gmail-helper');
 const { resolveTurnstileExt, cleanupSealedTemps } = require('./seal-turnstile');
 const {
     launchChrome,
@@ -127,6 +128,17 @@ class Mail {
                     if (codeFromContent) {
                         this.log(`[Grok Mail] OTP found in content: ${codeFromContent}`);
                         return codeFromContent;
+                    }
+                }
+            } else if (this.provider === 'gmail') {
+                const messages = await readInbox('from:x.ai newer_than:1h', 10, this.log);
+                this.log(`[Grok Mail] gmail: ${messages.length} messages`);
+                for (const msg of messages) {
+                    const content = (msg.subject || '') + '\n' + (msg.body || '');
+                    const code = extractOtp(content);
+                    if (code) {
+                        this.log(`[Grok Mail] OTP found in gmail message: ${code}`);
+                        return code;
                     }
                 }
             }

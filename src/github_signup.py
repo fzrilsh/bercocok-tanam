@@ -27,11 +27,13 @@ WARM_COOKIES_FILE = 'warm_cookies.json'
 
 
 class TempEmail:
-    def __init__(self, email, provider, csrf_token=None, cookies=None):
+    def __init__(self, email, provider, csrf_token=None, cookies=None, node_binary=None, gmail_otp_cli=None):
         self.email = email
         self.provider = provider
         self.csrf_token = csrf_token
         self.cookies = cookies
+        self.node_binary = node_binary
+        self.gmail_otp_cli = gmail_otp_cli
         self.session = requests.Session()
     
     def get_random_user_agent(self):
@@ -49,8 +51,32 @@ class TempEmail:
             return self._wait_for_github_otp_ncaori(max_attempts)
         elif self.provider == "1secemail":
             return self._wait_for_github_otp_secemail(max_attempts)
+        elif self.provider == "gmail":
+            return self._wait_for_github_otp_gmail()
         else:
             raise Exception(f"Unknown provider: {self.provider}")
+    
+    def _wait_for_github_otp_gmail(self):
+        if not self.node_binary or not self.gmail_otp_cli:
+            raise Exception("Gmail provider requires --node-binary and --gmail-otp-cli arguments")
+        
+        print("Reading OTP via Gmail API (Node helper)...")
+        import subprocess
+        result = subprocess.run(
+            [self.node_binary, self.gmail_otp_cli, '--type', 'launch_code'],
+            capture_output=True, text=True, timeout=300
+        )
+        
+        if result.returncode != 0:
+            print(f"Gmail OTP error: {result.stderr.strip()}")
+            raise Exception(f"Gmail OTP failed: {result.stderr.strip()}")
+        
+        otp_code = result.stdout.strip()
+        if not otp_code:
+            raise Exception("Gmail OTP: no code returned")
+        
+        print(f"GitHub OTP code received (Gmail): {otp_code}")
+        return otp_code
     
     def _wait_for_github_otp_ncaori(self, max_attempts):
         user_agent = self.get_random_user_agent()
@@ -875,8 +901,8 @@ def generate_password():
     return password
 
 
-def create_github_account(email, provider, csrf_token=None, cookies=None, headless=False, proxy=None, chrome_binary=None):
-    temp_email = TempEmail(email, provider, csrf_token, cookies)
+def create_github_account(email, provider, csrf_token=None, cookies=None, headless=False, proxy=None, chrome_binary=None, node_binary=None, gmail_otp_cli=None):
+    temp_email = TempEmail(email, provider, csrf_token, cookies, node_binary, gmail_otp_cli)
     
     username = temp_email.email.split('@')[0]
     password = generate_password()
@@ -933,12 +959,14 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='GitHub Account Generator')
     parser.add_argument('--email', type=str, required=True, help='Email address to use for signup')
-    parser.add_argument('--provider', type=str, required=True, help='Temp email provider (ncaori or 1secemail)')
+    parser.add_argument('--provider', type=str, required=True, help='Temp email provider (ncaori, 1secemail, or gmail)')
     parser.add_argument('--csrf-token', type=str, help='CSRF token from temp email service (required for 1secemail)')
     parser.add_argument('--cookies', type=str, help='Session cookies from temp email service (required for 1secemail)')
     parser.add_argument('--headless', action='store_true', help='Run in headless mode')
     parser.add_argument('--proxy', type=str, help='Proxy server (e.g., http://ip:port)')
     parser.add_argument('--chrome-binary', type=str, help='Path to Chrome binary')
+    parser.add_argument('--node-binary', type=str, help='Path to Node.js binary (required for gmail provider)')
+    parser.add_argument('--gmail-otp-cli', type=str, help='Path to gmail-otp-cli.js (required for gmail provider)')
     
     args = parser.parse_args()
     
@@ -952,7 +980,9 @@ if __name__ == '__main__':
         cookies=args.cookies,
         headless=args.headless,
         proxy=args.proxy,
-        chrome_binary=args.chrome_binary
+        chrome_binary=args.chrome_binary,
+        node_binary=args.node_binary,
+        gmail_otp_cli=args.gmail_otp_cli
     )
     
     if result['success']:
