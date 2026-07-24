@@ -64,12 +64,11 @@ class TempEmail:
         import subprocess
         result = subprocess.run(
             [self.node_binary, self.gmail_otp_cli, '--type', 'launch_code'],
-            capture_output=True, text=True, timeout=300
+            stdout=subprocess.PIPE, text=True, timeout=300
         )
         
         if result.returncode != 0:
-            print(f"Gmail OTP error: {result.stderr.strip()}")
-            raise Exception(f"Gmail OTP failed: {result.stderr.strip()}")
+            raise Exception(f"Gmail OTP failed (exit {result.returncode})")
         
         otp_code = result.stdout.strip()
         if not otp_code:
