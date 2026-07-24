@@ -467,6 +467,7 @@ async function main() {
                                     { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                     { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
                                     { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                    { name: "mail.cx (API token + custom domains)", value: "mailcx", checked: false },
                                 ],
                             },
                         ]);
@@ -500,6 +501,7 @@ async function main() {
                                     { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                     { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
                                     { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                    { name: "mail.cx (API token + custom domains)", value: "mailcx", checked: false },
                                 ],
                             },
                         ]);
@@ -556,6 +558,7 @@ async function main() {
                                         { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                         { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
                                         { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                        { name: "mail.cx (API token + custom domains)", value: "mailcx", checked: false },
                                     ],
                                 },
                             ]);
@@ -618,6 +621,7 @@ async function main() {
                                         { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
                                         { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
                                         { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                        { name: "mail.cx (API token + custom domains)", value: "mailcx", checked: false },
                                     ],
                                 },
                             ]);

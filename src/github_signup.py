@@ -27,13 +27,14 @@ WARM_COOKIES_FILE = 'warm_cookies.json'
 
 
 class TempEmail:
-    def __init__(self, email, provider, csrf_token=None, cookies=None, node_binary=None, gmail_otp_cli=None):
+    def __init__(self, email, provider, csrf_token=None, cookies=None, node_binary=None, gmail_otp_cli=None, api_token=None):
         self.email = email
         self.provider = provider
         self.csrf_token = csrf_token
         self.cookies = cookies
         self.node_binary = node_binary
         self.gmail_otp_cli = gmail_otp_cli
+        self.api_token = api_token
         self.session = requests.Session()
     
     def get_random_user_agent(self):
@@ -53,6 +54,8 @@ class TempEmail:
             return self._wait_for_github_otp_secemail(max_attempts)
         elif self.provider == "gmail":
             return self._wait_for_github_otp_gmail()
+        elif self.provider == "mailcx":
+            return self._wait_for_github_otp_mailcx(max_attempts)
         else:
             raise Exception(f"Unknown provider: {self.provider}")
     
@@ -76,6 +79,95 @@ class TempEmail:
         
         print(f"GitHub OTP code received (Gmail): {otp_code}")
         return otp_code
+
+    def _wait_for_github_otp_mailcx(self, max_attempts):
+        if not self.api_token:
+            raise Exception("mailcx provider requires --api-token")
+
+        headers = {
+            'accept': 'application/json',
+            'x-api-token': self.api_token,
+            'user-agent': self.get_random_user_agent(),
+        }
+
+        for attempt in range(1, max_attempts + 1):
+            print(f"Checking for GitHub OTP via mail.cx (attempt {attempt}/{max_attempts})...")
+
+            try:
+                from urllib.parse import quote
+                encoded_email = quote(self.email)
+                response = self.session.get(
+                    f'https://api.mail.cx/v1/inbox/{encoded_email}',
+                    headers=headers,
+                    timeout=2,
+                )
+
+                if response.status_code == 204:
+                    time.sleep(3)
+                    continue
+
+                if response.status_code != 200:
+                    print(f"mail.cx inbox status: {response.status_code}")
+                    time.sleep(3)
+                    continue
+
+                data = response.json()
+                emails = data.get('emails') if isinstance(data, dict) else data
+                if not emails:
+                    time.sleep(3)
+                    continue
+
+                for email_msg in emails:
+                    sender = email_msg.get('from_email', '') or email_msg.get('from', '') or email_msg.get('sender', '')
+                    subject = email_msg.get('subject', '') or ''
+                    content = email_msg.get('preview_text', '') or email_msg.get('content', '') or ''
+
+                    msg_id = email_msg.get('id')
+                    if msg_id:
+                        try:
+                            full_res = self.session.get(
+                                f'https://api.mail.cx/v1/email/{msg_id}',
+                                headers=headers,
+                                timeout=2,
+                            )
+                            if full_res.status_code == 200:
+                                full = full_res.json()
+                                sender = full.get('from_email') or full.get('from') or sender
+                                subject = full.get('subject') or subject
+                                content = (
+                                    full.get('html')
+                                    or full.get('text')
+                                    or full.get('body_html')
+                                    or full.get('body_text')
+                                    or full.get('preview_text')
+                                    or content
+                                )
+                        except Exception as e:
+                            print(f"mail.cx full email fetch warning: {e}")
+
+                    if 'noreply@github.com' in sender and 'launch code' in subject.lower():
+                        otp_match = re.search(
+                            r'<span class="f00-light text-gray-dark sans-serif text-semibold"[^>]*>(\d{8})</span>',
+                            content or '',
+                        )
+                        if otp_match:
+                            otp_code = otp_match.group(1)
+                            print(f"GitHub OTP code received (mail.cx): {otp_code}")
+                            return otp_code
+
+                        plain_otp_match = re.search(r'(\d{8})', content or '')
+                        if plain_otp_match:
+                            otp_code = plain_otp_match.group(1)
+                            print(f"GitHub OTP code received (mail.cx plain): {otp_code}")
+                            return otp_code
+            except requests.exceptions.Timeout:
+                pass
+            except Exception as e:
+                print(f"Error checking mail.cx emails: {e}")
+
+            time.sleep(3)
+
+        raise Exception("GitHub OTP code not received within timeout (mail.cx)")
     
     def _wait_for_github_otp_ncaori(self, max_attempts):
         user_agent = self.get_random_user_agent()
@@ -913,8 +1005,8 @@ def generate_password():
     return password
 
 
-def create_github_account(email, provider, csrf_token=None, cookies=None, headless=False, proxy=None, chrome_binary=None, node_binary=None, gmail_otp_cli=None):
-    temp_email = TempEmail(email, provider, csrf_token, cookies, node_binary, gmail_otp_cli)
+def create_github_account(email, provider, csrf_token=None, cookies=None, headless=False, proxy=None, chrome_binary=None, node_binary=None, gmail_otp_cli=None, api_token=None):
+    temp_email = TempEmail(email, provider, csrf_token, cookies, node_binary, gmail_otp_cli, api_token)
     
     username = generate_username()
     password = generate_password()
@@ -971,7 +1063,7 @@ if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description='GitHub Account Generator')
     parser.add_argument('--email', type=str, required=True, help='Email address to use for signup')
-    parser.add_argument('--provider', type=str, required=True, help='Temp email provider (ncaori, 1secemail, or gmail)')
+    parser.add_argument('--provider', type=str, required=True, help='Temp email provider (ncaori, 1secemail, gmail, or mailcx)')
     parser.add_argument('--csrf-token', type=str, help='CSRF token from temp email service (required for 1secemail)')
     parser.add_argument('--cookies', type=str, help='Session cookies from temp email service (required for 1secemail)')
     parser.add_argument('--headless', action='store_true', help='Run in headless mode')
@@ -979,6 +1071,7 @@ if __name__ == '__main__':
     parser.add_argument('--chrome-binary', type=str, help='Path to Chrome binary')
     parser.add_argument('--node-binary', type=str, help='Path to Node.js binary (required for gmail provider)')
     parser.add_argument('--gmail-otp-cli', type=str, help='Path to gmail-otp-cli.js (required for gmail provider)')
+    parser.add_argument('--api-token', type=str, help='API token for mail.cx provider')
     
     args = parser.parse_args()
     
@@ -994,7 +1087,8 @@ if __name__ == '__main__':
         proxy=args.proxy,
         chrome_binary=args.chrome_binary,
         node_binary=args.node_binary,
-        gmail_otp_cli=args.gmail_otp_cli
+        gmail_otp_cli=args.gmail_otp_cli,
+        api_token=args.api_token,
     )
     
     if result['success']:

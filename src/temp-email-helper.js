@@ -1,5 +1,6 @@
 const axios = require("axios");
 const { generatePlusAddress } = require("./gmail-helper");
+const { getConfig } = require("./config");
 
 // Provider 1: ncaori.my.id domains (stateless)
 const NCAORI_DOMAINS = [
@@ -211,14 +212,50 @@ async function createTempEmailGmail(accountIndex = null, log = console.log) {
 }
 
 /**
+ * Create mail.cx address (API token + domains from .env)
+ * @returns {{ email, provider: "mailcx", apiToken, userAgent }}
+ */
+async function createTempEmailMailCx(accountIndex = null, log = console.log) {
+    log("Creating temporary email (mail.cx)...");
+
+    const config = getConfig();
+    const apiToken = config.mailCxApiToken;
+    const domains = config.mailCxDomains || [];
+
+    if (!apiToken) {
+        throw new Error("MAIL_CX_API_TOKEN not configured");
+    }
+    if (!domains.length) {
+        throw new Error("MAIL_CX_DOMAINS not configured");
+    }
+
+    const userAgent = randomUA();
+    const index = accountIndex !== null ? accountIndex : emailCounter++;
+    let domain = domains[index % domains.length];
+    domain = domain.startsWith("@") ? domain : `@${domain}`;
+    const local = generateRandomString(8 + Math.floor(Math.random() * 4));
+    const email = `${local}${domain}`;
+
+    log(`mail.cx email created: ${email}`);
+    log(`Using domain ${domain} (${(index % domains.length) + 1}/${domains.length})`);
+
+    return {
+        email,
+        provider: "mailcx",
+        apiToken,
+        userAgent,
+    };
+}
+
+/**
  * Create temp email with provider selection
  * @param {number|null} accountIndex - Account index for domain rotation
  * @param {function} log - Logging function
- * @param {string|string[]} provider - "ncaori", "1secemail", "auto", or ["ncaori", "1secemail"] for random selection from array
- * @returns {Promise<{email: string, provider: string, userAgent: string, csrfToken?: string, cookies?: string}>}
+ * @param {string|string[]} provider - "ncaori", "1secemail", "gmail", "mailcx", "auto", or array
+ * @returns {Promise<{email: string, provider: string, userAgent: string, csrfToken?: string, cookies?: string, apiToken?: string}>}
  */
 async function createTempEmail(accountIndex = null, log = console.log, provider = "auto") {
-    const availableProviders = ["ncaori", "1secemail", "gmail"];
+    const availableProviders = ["ncaori", "1secemail", "gmail", "mailcx"];
     let selectedProvider = provider;
     
     // Handle array input - randomly select from provided array
@@ -230,7 +267,7 @@ async function createTempEmail(accountIndex = null, log = console.log, provider 
         // Validate all providers in array
         const invalidProviders = provider.filter(p => !availableProviders.includes(p));
         if (invalidProviders.length > 0) {
-            throw new Error(`Invalid providers in array: ${invalidProviders.join(", ")}. Use "ncaori", "1secemail", or "gmail"`);
+            throw new Error(`Invalid providers in array: ${invalidProviders.join(", ")}. Use "ncaori", "1secemail", "gmail", or "mailcx"`);
         }
         
         selectedProvider = provider[Math.floor(Math.random() * provider.length)];
@@ -244,7 +281,7 @@ async function createTempEmail(accountIndex = null, log = console.log, provider 
     // Handle single provider string
     else if (typeof provider === "string") {
         if (!availableProviders.includes(provider)) {
-            throw new Error(`Unknown provider: ${provider}. Use "ncaori", "1secemail", "gmail", "auto", or array like ["ncaori", "1secemail"]`);
+            throw new Error(`Unknown provider: ${provider}. Use "ncaori", "1secemail", "gmail", "mailcx", "auto", or array like ["ncaori", "1secemail"]`);
         }
         selectedProvider = provider;
     }
@@ -258,6 +295,8 @@ async function createTempEmail(accountIndex = null, log = console.log, provider 
         return await createTempEmailSecemail(accountIndex, log);
     } else if (selectedProvider === "gmail") {
         return await createTempEmailGmail(accountIndex, log);
+    } else if (selectedProvider === "mailcx") {
+        return await createTempEmailMailCx(accountIndex, log);
     } else {
         throw new Error(`Unknown provider after selection: ${selectedProvider}`);
     }
@@ -337,9 +376,82 @@ async function pollMessages(session, log) {
             });
         }
         return results;
+    } else if (session.provider === "mailcx") {
+        return await pollMailCxMessages(session, log);
     } else {
         throw new Error(`Unknown provider: ${session.provider}`);
     }
+}
+
+async function pollMailCxMessages(session, log) {
+    const config = getConfig();
+    const apiToken = session.apiToken || config.mailCxApiToken;
+    if (!apiToken) {
+        throw new Error("MAIL_CX_API_TOKEN not configured");
+    }
+
+    const inboxUrl = `https://api.mail.cx/v1/inbox/${encodeURIComponent(session.email)}`;
+    let listRes;
+    try {
+        listRes = await axios.get(inboxUrl, {
+            headers: {
+                Accept: "application/json",
+                "x-api-token": apiToken,
+                "user-agent": session.userAgent || randomUA(),
+            },
+            timeout: 2000,
+            validateStatus: (s) => s === 200 || s === 204,
+        });
+    } catch (error) {
+        if (error.code === "ECONNABORTED" || error.message?.includes("timeout")) {
+            return [];
+        }
+        throw error;
+    }
+
+    if (listRes.status === 204 || !listRes.data) {
+        return [];
+    }
+
+    const emails = listRes.data.emails || listRes.data || [];
+    if (!Array.isArray(emails) || emails.length === 0) {
+        return [];
+    }
+
+    const results = [];
+    for (const msg of emails) {
+        let body = msg.preview_text || msg.body || msg.content || "";
+        let from = msg.from_email || msg.from || msg.sender || "";
+        let subject = msg.subject || "";
+
+        if (msg.id) {
+            try {
+                const fullRes = await axios.get(
+                    `https://api.mail.cx/v1/email/${encodeURIComponent(msg.id)}`,
+                    {
+                        headers: {
+                            Accept: "application/json",
+                            "x-api-token": apiToken,
+                            "user-agent": session.userAgent || randomUA(),
+                        },
+                        timeout: 2000,
+                    },
+                );
+                const full = fullRes.data || {};
+                from = full.from_email || full.from || from;
+                subject = full.subject || subject;
+                body = full.html || full.text || full.body_html || full.body_text || full.preview_text || body;
+            } catch (error) {
+                if (!(error.code === "ECONNABORTED" || error.message?.includes("timeout"))) {
+                    log(`mail.cx full email fetch warning: ${error.message}`);
+                }
+            }
+        }
+
+        results.push({ from, subject, body });
+    }
+
+    return results;
 }
 
 /**

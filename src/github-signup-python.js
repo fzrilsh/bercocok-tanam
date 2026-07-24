@@ -96,6 +96,10 @@ async function createGitHubAccountViaPython(accountIndex, useProxy, log, updateP
             args.push('--node-binary', process.execPath);
             args.push('--gmail-otp-cli', path.join(__dirname, 'gmail-otp-cli.js'));
         }
+
+        if (tempEmail.provider === "mailcx" && tempEmail.apiToken) {
+            args.push('--api-token', tempEmail.apiToken);
+        }
         
         log(`Executing Python script with email: ${tempEmail.email} (provider: ${tempEmail.provider})`);
         if (proxyUrl) log(`Using proxy: ${proxyUrl.split('@')[1] || proxyUrl}`);

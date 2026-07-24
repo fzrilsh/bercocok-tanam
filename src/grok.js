@@ -147,6 +147,18 @@ class Mail {
                         return code;
                     }
                 }
+            } else if (this.provider === 'mailcx') {
+                const { pollMessages } = require('./temp-email-helper');
+                const messages = await pollMessages(this.tempEmailData, this.log);
+                this.log(`[Grok Mail] mailcx: ${messages.length} messages`);
+                for (const msg of messages) {
+                    const content = (msg.subject || '') + '\n' + (msg.body || '');
+                    const code = extractOtp(content);
+                    if (code) {
+                        this.log(`[Grok Mail] OTP found in mailcx message: ${code}`);
+                        return code;
+                    }
+                }
             }
         } catch (e) {
             this.log(`[Grok Mail] peekCode error: ${e.message}`);

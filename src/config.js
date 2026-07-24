@@ -125,10 +125,10 @@ function parseTempEmailProvider(value) {
             if (!Array.isArray(parsed) || parsed.length === 0) {
                 throw new Error("TEMP_EMAIL_PROVIDER array must be non-empty");
             }
-            const validProviders = ["ncaori", "1secemail", "gmail"];
+            const validProviders = ["ncaori", "1secemail", "gmail", "mailcx"];
             const invalidProviders = parsed.filter(p => !validProviders.includes(p));
             if (invalidProviders.length > 0) {
-                throw new Error(`Invalid providers: ${invalidProviders.join(", ")}. Use "ncaori", "1secemail", or "gmail"`);
+                throw new Error(`Invalid providers: ${invalidProviders.join(", ")}. Use "ncaori", "1secemail", "gmail", or "mailcx"`);
             }
             return parsed;
         } catch (error) {
@@ -137,11 +137,26 @@ function parseTempEmailProvider(value) {
     }
 
     // Single provider string
-    const validProviders = ["auto", "ncaori", "1secemail", "gmail"];
+    const validProviders = ["auto", "ncaori", "1secemail", "gmail", "mailcx"];
     if (!validProviders.includes(value)) {
-        throw new Error(`Invalid TEMP_EMAIL_PROVIDER: ${value}. Use "auto", "ncaori", "1secemail", "gmail", or array like ["ncaori","1secemail"]`);
+        throw new Error(`Invalid TEMP_EMAIL_PROVIDER: ${value}. Use "auto", "ncaori", "1secemail", "gmail", "mailcx", or array like ["ncaori","1secemail"]`);
     }
     return value;
+}
+
+function parseMailCxDomains(value) {
+    if (!value) return [];
+    const raw = value.trim();
+    if (raw.startsWith("[")) {
+        try {
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) throw new Error("must be array");
+            return parsed.map((d) => String(d).trim()).filter(Boolean);
+        } catch (error) {
+            throw new Error(`Invalid MAIL_CX_DOMAINS: ${error.message}`);
+        }
+    }
+    return raw.split(/[,\s]+/).map((d) => d.trim()).filter(Boolean);
 }
 
 function createConfig() {
@@ -174,6 +189,8 @@ function createConfig() {
         turnstileExtPath: env.TURNSTILE_EXT_PATH || '',
         gmailCredentialsFile: env.GMAIL_CREDENTIALS_FILE || 'creedentials.json',
         gmailBaseAddress: env.GMAIL_BASE_ADDRESS || '',
+        mailCxApiToken: env.MAIL_CX_API_TOKEN || env.MAILCX_API_TOKEN || '',
+        mailCxDomains: parseMailCxDomains(env.MAIL_CX_DOMAINS || env.MAILCX_DOMAINS || ''),
         delays: {
             beforeNextClick: toPositiveNumber(env.DELAY_BEFORE_NEXT_CLICK_MS, 1000),
             betweenAccounts: toPositiveNumber(env.DELAY_BETWEEN_ACCOUNTS_MS, 3000),
