@@ -287,9 +287,16 @@ chrome.webRequest.onAuthRequired.addListener(
         """Save current browser cookies for next signup (cookie warming)"""
         try:
             cookies = self.driver.get_cookies()
+            BLOCKED_SAVE = [
+                '_gh_sess', 'user_session', '__Host-user_session_same_site',
+                'logged_in', 'dotcom_user', 'datadome', '_device_id',
+                'last_write_ms', 'ai_session', 'MSFPC',
+                'MicrosoftApplicationsTelemetryDeviceId',
+            ]
+            filtered = [c for c in cookies if c.get('name') not in BLOCKED_SAVE]
             with open(WARM_COOKIES_FILE, 'w') as f:
-                json.dump(cookies, f, indent=2)
-            print(f"✅ Saved {len(cookies)} warm cookies to {WARM_COOKIES_FILE}")
+                json.dump(filtered, f, indent=2)
+            print(f"✅ Saved {len(filtered)} warm cookies to {WARM_COOKIES_FILE} (filtered {len(cookies) - len(filtered)})")
         except Exception as e:
             print(f"⚠️  Could not save warm cookies: {e}")
     
@@ -330,6 +337,9 @@ chrome.webRequest.onAuthRequired.addListener(
                 '__Host-user_session_same_site',  # Session
                 'logged_in',          # Login state
                 'dotcom_user',        # User identifier
+                'datadome',           # DataDome anti-bot fingerprint (device-specific)
+                '_device_id',         # Device identifier
+                'last_write_ms',      # Timestamp leak
             ]
             
             # Add each cookie (except blocked ones)

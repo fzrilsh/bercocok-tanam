@@ -89,6 +89,15 @@ function writeCounter(count) {
     } catch {}
 }
 
+function generateRandomString(length) {
+    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+    let result = "";
+    for (let i = 0; i < length; i++) {
+        result += chars[Math.floor(Math.random() * chars.length)];
+    }
+    return result;
+}
+
 function generatePlusAddress(accountIndex = null, prefix = "github") {
     const base = getBaseAddress();
     if (!base) throw new Error("GMAIL_BASE_ADDRESS not configured");
@@ -96,16 +105,8 @@ function generatePlusAddress(accountIndex = null, prefix = "github") {
     const [localPart, domain] = base.split("@");
     if (!domain) throw new Error(`Invalid GMAIL_BASE_ADDRESS: ${base}`);
 
-    let idx;
-    if (accountIndex !== null) {
-        idx = accountIndex;
-    } else {
-        idx = readCounter();
-        writeCounter(idx + 1);
-    }
-
-    const suffix = String(idx + 1).padStart(6, "0");
-    return `${localPart}+${prefix}${suffix}@${domain}`;
+    const randomPart = generateRandomString(8);
+    return `${localPart}+${randomPart}@${domain}`;
 }
 
 function extractBaseAddress(plusAddress) {
