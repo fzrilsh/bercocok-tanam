@@ -156,32 +156,7 @@ function buildGitHubOAuthUrl(oauthState) {
 }
 
 async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthState, log) {
-  log('Phase 1: Starting GitHub OAuth flow...');
-
-  let interceptedCode = null;
-  let interceptedState = null;
-
-  // Set up request listener BEFORE any navigation (to catch fast redirects)
-  const requestHandler = (request) => {
-    const url = request.url();
-    if (url.includes('livrouter.com/oauth/github') && url.includes('code=')) {
-      try {
-        const urlObj = new URL(url);
-        const code = urlObj.searchParams.get('code');
-        const state = urlObj.searchParams.get('state');
-        if (code && state && !interceptedCode) {
-          interceptedCode = code;
-          interceptedState = state;
-          log(`🎯 Captured OAuth callback: code=${code.substring(0, 20)}..., state=${state}`);
-        }
-      } catch (err) {
-        log(`Error parsing callback URL: ${err.message}`);
-      }
-    }
-  };
-  
-  page.on('request', requestHandler);
-  log('Request listener set up to capture OAuth callback');
+  log('Phase 1: Starting GitHub OAuth flow (browser will complete callback)...');
 
   log('Navigating to GitHub OAuth URL...');
   await page.goto(oauthUrl, { waitUntil: 'networkidle2' });
@@ -208,118 +183,85 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
 
   log('Waiting for authorization page...');
   
-  try {
-    // Try to find authorization button (OPTIONAL - might already be authorized)
-    log('Checking for Authorize button...');
-    const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', { 
-      timeout: 15000, 
-      visible: true 
-    }).then(() => true).catch(() => false);
+  // Try to find authorization button (OPTIONAL - might already be authorized)
+  log('Checking for Authorize button...');
+  const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', { 
+    timeout: 15000, 
+    visible: true 
+  }).then(() => true).catch(() => false);
+  
+  if (buttonFound) {
+    log('Authorization button found, clicking and waiting for OAuth callback...');
+    await sleep(2000);
     
-    if (buttonFound) {
-      log('Authorization button found, attempting to click...');
-      await sleep(2000);
+    // Click and wait for navigation to callback URL (browser will load callback page)
+    try {
+      await Promise.all([
+        page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+        page.click('button[name="authorize"][value="1"]', { delay: 100 })
+      ]);
+      log('✅ Authorization completed, navigated to callback');
+    } catch (err) {
+      log(`Click with navigation failed: ${err.message}, trying JavaScript click...`);
       
-      let clickSucceeded = false;
-      
-      // Try Method 1: Puppeteer click
-      log('Trying click method 1: page.click()...');
+      // Try JavaScript click as fallback
       try {
         await Promise.all([
-          page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
-          page.click('button[name="authorize"][value="1"]', { delay: 100 })
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+          page.evaluate(() => {
+            const btn = document.querySelector('button[name="authorize"][value="1"]');
+            if (btn) btn.click();
+          })
         ]);
-        log('✅ Click method 1 succeeded - navigation detected');
-        clickSucceeded = true;
-      } catch (err) {
-        log(`❌ Click method 1 failed: ${err.message}`);
-      }
-      
-      // Try Method 2: JavaScript click
-      if (!clickSucceeded) {
-        log('Trying click method 2: JavaScript element.click()...');
-        try {
-          await Promise.all([
-            page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
-            page.evaluate(() => {
-              const btn = document.querySelector('button[name="authorize"][value="1"]');
-              if (btn) btn.click();
-            })
-          ]);
-          log('✅ Click method 2 succeeded - navigation detected');
-          clickSucceeded = true;
-        } catch (err) {
-          log(`❌ Click method 2 failed: ${err.message}`);
-        }
-      }
-      
-      // Try Method 3: Form submit
-      if (!clickSucceeded) {
-        log('Trying click method 3: form.submit()...');
-        try {
-          await Promise.all([
-            page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
-            page.evaluate(() => {
-              const btn = document.querySelector('button[name="authorize"][value="1"]');
-              const form = btn ? btn.closest('form') : null;
-              if (form) {
-                form.submit();
-              } else {
-                throw new Error('Form not found');
-              }
-            })
-          ]);
-          log('✅ Click method 3 succeeded - navigation detected');
-          clickSucceeded = true;
-        } catch (err) {
-          log(`❌ Click method 3 failed: ${err.message}`);
-        }
-      }
-      
-      if (!clickSucceeded) {
-        log('⚠️  All click methods failed, but continuing (might already be authorized)');
-      }
-    } else {
-      log('✅ No authorization button found - assuming already authorized, continuing...');
-    }
-    
-    // Wait a bit for OAuth callback to be captured (whether we clicked or not)
-    log('Waiting for OAuth callback to be captured...');
-    await sleep(5000);
-    
-    // Check if we captured code and state from the request
-    if (interceptedCode && interceptedState) {
-      log(`✅ Successfully captured code and state from OAuth callback`);
-    } else {
-      // Fallback: try to get from current URL
-      const currentUrl = page.url();
-      log(`Request handler didn't capture callback, checking current URL: ${currentUrl}`);
-      
-      const urlObj = new URL(currentUrl);
-      interceptedCode = urlObj.searchParams.get('code');
-      interceptedState = urlObj.searchParams.get('state');
-      
-      if (!interceptedCode || !interceptedState) {
-        log(`⚠️  Code: ${interceptedCode || 'MISSING'}`);
-        log(`⚠️  State: ${interceptedState || 'MISSING'}`);
-        throw new Error('Failed to capture code and state from OAuth callback');
+        log('✅ Authorization completed via JavaScript click');
+      } catch (err2) {
+        log(`⚠️  All click methods failed: ${err2.message}`);
+        throw new Error('Failed to complete authorization');
       }
     }
+  } else {
+    log('No authorization button found - assuming already authorized');
+    log('Waiting for automatic redirect to callback...');
     
-  } catch (authErr) {
-    log(`Authorization error: ${authErr.message}`);
-    throw new Error(`Authorization failed: ${authErr.message}`);
-  } finally {
-    // Clean up request listener
-    page.off('request', requestHandler);
+    // Wait for navigation to callback (should happen automatically if already authorized)
+    try {
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+      log('✅ Automatic redirect to callback completed');
+    } catch (err) {
+      log(`⚠️  No automatic redirect detected: ${err.message}`);
+    }
   }
-
-  if (!interceptedCode || !interceptedState) {
-    throw new Error('Failed to extract OAuth callback code/state from URL');
+  
+  // At this point, browser should have loaded the callback page
+  // Wait for page to fully process the OAuth exchange
+  log('Waiting for callback page to complete OAuth exchange...');
+  await sleep(3000);
+  
+  const finalUrl = page.url();
+  log(`Final URL after OAuth: ${finalUrl}`);
+  
+  // Check if we ended up on an error page
+  if (finalUrl.includes('/error') || finalUrl.includes('mismatch')) {
+    const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    log(`❌ OAuth flow ended on error page`);
+    log(`Error page content: ${pageText.substring(0, 300)}`);
+    throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
   }
-
-  log('GitHub OAuth authorization successful!');
-  return { code: interceptedCode, state: interceptedState };
+  
+  // Extract all cookies from browser (includes new session cookie from OAuth)
+  const cookies = await page.cookies();
+  log(`Extracted ${cookies.length} cookie(s) from browser after OAuth`);
+  
+  // Convert cookies to cookie string for axios
+  const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+  
+  if (!cookieString) {
+    throw new Error('No cookies found in browser after OAuth flow');
+  }
+  
+  log('✅ GitHub OAuth flow completed successfully!');
+  log(`Session cookies: ${cookieString.substring(0, 60)}...`);
+  return { cookies: cookieString };
 }
 
 async function exchangeOAuthCallback(axiosInstance, code, state, originalState, stateCookies, log) {
@@ -374,6 +316,47 @@ async function exchangeOAuthCallback(axiosInstance, code, state, originalState, 
   log(`User ID: ${userId}`);
 
   return { sessionCookie, userId };
+}
+
+async function getUserInfo(axiosInstance, sessionCookie, log) {
+  log('Phase 2: Getting user info from session...');
+
+  const headers = {
+    'accept': '*/*',
+    'cookie': sessionCookie,
+    'referer': `${BASE_URL}/dashboard`,
+    'content-type': 'application/json',
+    'cache-control': 'no-cache',
+    'pragma': 'no-cache'
+  };
+
+  const response = await axiosRequestWithRetry(
+    axiosInstance,
+    'GET',
+    `${BASE_URL}/api/gateway/user/self`,
+    { headers },
+    log
+  );
+
+  if (response.status !== 200) {
+    throw new Error(`Failed to get user info: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const data = response.data;
+
+  if (!data.success || !data.data?.id) {
+    throw new Error(`Invalid user info response: ${JSON.stringify(data)}`);
+  }
+
+  const userId = data.data.id;
+  const affCode = data.data.aff_code || null;
+  
+  log(`User ID: ${userId}`);
+  if (affCode) {
+    log(`Affiliate code: ${affCode}`);
+  }
+
+  return { userId, affCode };
 }
 
 function buildAuthHeaders(sessionCookie, userId) {
@@ -607,18 +590,26 @@ async function processLivRouterAccountOnce(
 
       const oauthUrl = buildGitHubOAuthUrl(oauthState);
       const result = await executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthState, log);
-      const code = result.code;
-      const state = result.state;
+      const browserCookies = result.cookies;
 
       await sleep(config.delays.beforeBrowserClose);
       await browser.close();
       browser = null;
       log('Browser closed (OAuth complete)');
 
-      updateProgress({ step: 'Exchanging session' });
-      const sessionData = await exchangeOAuthCallback(axiosInstance, code, state, oauthState, stateCookies, log);
-      sessionCookie = sessionData.sessionCookie;
-      userId = sessionData.userId;
+      updateProgress({ step: 'Getting user info' });
+      
+      // Browser already completed OAuth exchange, extract session cookie
+      const sessionMatch = browserCookies.match(/session=([^;]+)/);
+      if (!sessionMatch) {
+        throw new Error('No session cookie found in browser cookies after OAuth');
+      }
+      sessionCookie = sessionMatch[1].trim();
+      log(`Session cookie extracted (first 30): ${sessionCookie.substring(0, 30)}...`);
+      
+      // Get user info (including userId) using the session cookie
+      const userInfo = await getUserInfo(axiosInstance, browserCookies, log);
+      userId = userInfo.userId;
 
       updateProgress({ step: STEPS.HARVESTING });
 
