@@ -318,7 +318,7 @@ async function exchangeOAuthCallback(axiosInstance, code, state, originalState, 
   return { sessionCookie, userId };
 }
 
-async function getUserInfo(axiosInstance, sessionCookie, log) {
+async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
   log('Phase 2: Getting user info from session...');
 
   const headers = {
@@ -329,6 +329,12 @@ async function getUserInfo(axiosInstance, sessionCookie, log) {
     'cache-control': 'no-cache',
     'pragma': 'no-cache'
   };
+  
+  // Add New-Api-User header if userId is provided
+  if (userId) {
+    headers['new-api-user'] = String(userId);
+    log(`Including New-Api-User header: ${userId}`);
+  }
 
   const response = await axiosRequestWithRetry(
     axiosInstance,
@@ -348,15 +354,15 @@ async function getUserInfo(axiosInstance, sessionCookie, log) {
     throw new Error(`Invalid user info response: ${JSON.stringify(data)}`);
   }
 
-  const userId = data.data.id;
+  const returnedUserId = data.data.id;
   const affCode = data.data.aff_code || null;
   
-  log(`User ID: ${userId}`);
+  log(`User ID from API: ${returnedUserId}`);
   if (affCode) {
     log(`Affiliate code: ${affCode}`);
   }
 
-  return { userId, affCode };
+  return { userId: returnedUserId, affCode };
 }
 
 function buildAuthHeaders(sessionCookie, userId) {
@@ -663,10 +669,64 @@ async function processLivRouterAccountOnce(
       throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
     }
     
+    // Ensure we're on dashboard and wait for page to fully load
+    if (!finalUrl.includes('/dashboard')) {
+      log('Not on dashboard yet, navigating...');
+      await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'networkidle2', timeout: 15000 });
+      log('✅ Navigated to dashboard');
+    }
+    
+    // Wait for dashboard to fully load (important for extracting userId)
+    log('Waiting for dashboard to fully load...');
+    await sleep(2000);
+    await page.waitForSelector('body', { timeout: 5000 });
+    log('✅ Dashboard loaded');
+    
     // Extract cookies from browser
     const cookies = await page.cookies();
     log(`Extracted ${cookies.length} cookie(s) from browser after OAuth`);
     const browserCookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    
+    // Extract userId from dashboard page before closing browser
+    log('Extracting userId from dashboard page...');
+    let extractedUserId = null;
+    
+    try {
+      // Try multiple methods to find userId
+      extractedUserId = await page.evaluate(() => {
+        // Method 1: Check for window variables
+        if (window.userId) return window.userId;
+        if (window.user?.id) return window.user.id;
+        if (window.userInfo?.id) return window.userInfo.id;
+        
+        // Method 2: Check for data attributes
+        const userElement = document.querySelector('[data-user-id]');
+        if (userElement) return userElement.getAttribute('data-user-id');
+        
+        // Method 3: Check for JSON in script tags
+        const scripts = Array.from(document.querySelectorAll('script'));
+        for (const script of scripts) {
+          const content = script.textContent || '';
+          const userIdMatch = content.match(/"id"\s*:\s*(\d+)/);
+          if (userIdMatch) return parseInt(userIdMatch[1]);
+        }
+        
+        // Method 4: Check page HTML for user ID patterns
+        const bodyText = document.body.innerHTML;
+        const idMatch = bodyText.match(/user[_-]?id["']?\s*[:=]\s*["']?(\d+)/i);
+        if (idMatch) return parseInt(idMatch[1]);
+        
+        return null;
+      });
+      
+      if (extractedUserId) {
+        log(`✅ UserId extracted from page: ${extractedUserId}`);
+      } else {
+        log('⚠️  Could not extract userId from page, will try API call without header');
+      }
+    } catch (err) {
+      log(`⚠️  Error extracting userId: ${err.message}`);
+    }
 
     await sleep(config.delays.beforeBrowserClose);
     await browser.close();
@@ -683,9 +743,27 @@ async function processLivRouterAccountOnce(
     sessionCookie = sessionMatch[1].trim();
     log(`Session cookie extracted (first 30): ${sessionCookie.substring(0, 30)}...`);
     
-    // Get user info (including userId) using the session cookie
-    const userInfo = await getUserInfo(axiosInstance, browserCookies, log);
-    userId = userInfo.userId;
+    // Use extracted userId or get it from API
+    if (extractedUserId) {
+      userId = extractedUserId;
+      log(`Using userId from dashboard: ${userId}`);
+      
+      // Optionally verify/get additional user info
+      try {
+        const userInfo = await getUserInfo(axiosInstance, browserCookies, userId, log);
+        if (userInfo.affCode) {
+          newAffCode = userInfo.affCode;
+          log(`Affiliate code from user info: ${newAffCode}`);
+        }
+      } catch (err) {
+        log(`⚠️  Could not fetch additional user info: ${err.message}`);
+      }
+    } else {
+      // Fallback: try to get userId from API (might fail without New-Api-User header)
+      log('⚠️  UserId not extracted from page, trying API call...');
+      const userInfo = await getUserInfo(axiosInstance, browserCookies, null, log);
+      userId = userInfo.userId;
+    }
 
     updateProgress({ step: STEPS.HARVESTING });
 
