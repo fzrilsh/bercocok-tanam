@@ -679,186 +679,45 @@ async function processLivRouterAccountOnce(
       throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
     }
     
-    // Ensure we're on dashboard and wait for page to fully load
-    if (!finalUrl.includes('/dashboard')) {
-      log('Not on dashboard yet, navigating...');
-      await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'networkidle2', timeout: 15000 });
-      log('✅ Navigated to dashboard');
-    }
+    // Navigate to dashboard and wait for networkidle (critical!)
+    log('Navigating to dashboard and waiting for network idle...');
+    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'networkidle2', timeout: 20000 });
+    log('✅ Dashboard loaded (networkidle)');
     
-    // Set up network interception to capture userId from API responses
-    let userIdFromNetwork = null;
+    // Extract userId from localStorage.livrouter_user
+    log('Extracting userId from localStorage.livrouter_user...');
+    let extractedUserId = null;
     
-    const responseHandler = async (response) => {
-      try {
-        const url = response.url();
-        // Check if this is a user-related API endpoint
-        if (url.includes('/api/gateway/user') || url.includes('/user/self') || url.includes('/user/me')) {
-          const contentType = response.headers()['content-type'] || '';
-          if (contentType.includes('application/json')) {
-            const responseData = await response.json().catch(() => null);
-            if (responseData?.data?.id) {
-              userIdFromNetwork = responseData.data.id;
-              log(`🎯 Captured userId from network response (${url}): ${userIdFromNetwork}`);
-            }
+    try {
+      extractedUserId = await page.evaluate(() => {
+        const userStr = localStorage.getItem('livrouter_user');
+        if (userStr) {
+          try {
+            const userData = JSON.parse(userStr);
+            if (userData.id) return parseInt(userData.id);
+          } catch (e) {
+            console.error('Failed to parse livrouter_user:', e);
           }
         }
-      } catch (err) {
-        // Ignore errors from response interception
-      }
-    };
-    
-    page.on('response', responseHandler);
-    
-    // Wait for dashboard to fully load (important for extracting userId)
-    log('Waiting for dashboard to fully load and capture network data...');
-    await sleep(3000); // Longer wait for API calls to complete
-    await page.waitForSelector('body', { timeout: 5000 });
-    log('✅ Dashboard loaded');
-    
-    // Clean up response handler
-    page.off('response', responseHandler);
-    
-    // Extract cookies from browser
-    const cookies = await page.cookies();
-    log(`Extracted ${cookies.length} cookie(s) from browser after OAuth`);
-    const browserCookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-    
-    // Log full cookies for manual testing
-    log(`Full browser cookies: ${browserCookies}`);
-    
-    // Extract userId from dashboard page before closing browser
-    log('Extracting userId from dashboard page...');
-    let extractedUserId = userIdFromNetwork; // Prioritize network-captured userId
-    
-    if (extractedUserId) {
-      log(`✅ Using userId from network interception: ${extractedUserId}`);
-    } else {
-      log('⚠️  No userId captured from network, trying page extraction...');
-      
-      try {
-        // First, log what's available on the page for debugging
-        const pageDebugInfo = await page.evaluate(() => {
-          return {
-            windowKeys: Object.keys(window).filter(k => k.toLowerCase().includes('user') || k.toLowerCase().includes('id')),
-            localStorage: JSON.stringify(localStorage),
-            sessionStorage: JSON.stringify(sessionStorage),
-            bodyClasses: document.body.className,
-            hasDataAttrs: !!document.querySelector('[data-user-id], [data-id], [data-userid]')
-          };
-        });
-        log(`Page debug info: ${JSON.stringify(pageDebugInfo)}`);
-        
-        // Try multiple methods to find userId
-        extractedUserId = await page.evaluate(() => {
-        // Method 1: Check for window variables
-        if (window.userId) return window.userId;
-        if (window.user?.id) return window.user.id;
-        if (window.userInfo?.id) return window.userInfo.id;
-        if (window.currentUser?.id) return window.currentUser.id;
-        if (window.__USER_ID__) return window.__USER_ID__;
-        if (window.__INITIAL_STATE__?.user?.id) return window.__INITIAL_STATE__.user.id;
-        
-        // Method 2: Check localStorage/sessionStorage
-        try {
-          const stored = localStorage.getItem('userId') || localStorage.getItem('user_id') || 
-                        sessionStorage.getItem('userId') || sessionStorage.getItem('user_id');
-          if (stored) return parseInt(stored);
-          
-          // Check for various user data keys
-          const userKeys = ['livrouter_user', 'user', 'userData', 'currentUser'];
-          for (const key of userKeys) {
-            const userStr = localStorage.getItem(key) || sessionStorage.getItem(key);
-            if (userStr) {
-              try {
-                const userData = JSON.parse(userStr);
-                if (userData.id) return parseInt(userData.id);
-              } catch (e) {}
-            }
-          }
-        } catch (e) {}
-        
-        // Method 3: Check for data attributes
-        const userElement = document.querySelector('[data-user-id], [data-id], [data-userid]');
-        if (userElement) {
-          const id = userElement.getAttribute('data-user-id') || 
-                     userElement.getAttribute('data-id') ||
-                     userElement.getAttribute('data-userid');
-          if (id) return parseInt(id);
-        }
-        
-        // Method 4: Check for JSON in script tags (including __NEXT_DATA__, __NUXT__)
-        const scripts = Array.from(document.querySelectorAll('script'));
-        for (const script of scripts) {
-          const content = script.textContent || '';
-          
-          // Check for Next.js data
-          if (content.includes('__NEXT_DATA__')) {
-            try {
-              const match = content.match(/__NEXT_DATA__\s*=\s*({.*?})\s*;/s);
-              if (match) {
-                const data = JSON.parse(match[1]);
-                if (data.props?.pageProps?.user?.id) return data.props.pageProps.user.id;
-                if (data.props?.user?.id) return data.props.user.id;
-              }
-            } catch (e) {}
-          }
-          
-          // Check for Nuxt data
-          if (content.includes('__NUXT__')) {
-            try {
-              const match = content.match(/__NUXT__\s*=\s*({.*?});/s);
-              if (match) {
-                const data = JSON.parse(match[1]);
-                if (data.state?.user?.id) return data.state.user.id;
-              }
-            } catch (e) {}
-          }
-          
-          // Generic ID search in JSON
-          const userIdMatch = content.match(/"id"\s*:\s*(\d+)/);
-          if (userIdMatch) return parseInt(userIdMatch[1]);
-        }
-        
-        // Method 5: Check meta tags
-        const metaUserId = document.querySelector('meta[name="user-id"], meta[property="user-id"]');
-        if (metaUserId) {
-          const id = metaUserId.getAttribute('content');
-          if (id) return parseInt(id);
-        }
-        
-        // Method 6: Check page HTML for user ID patterns (more aggressive)
-        const bodyText = document.body.innerHTML;
-        const patterns = [
-          /user[_-]?id["']?\s*[:=]\s*["']?(\d+)/i,
-          /"id"\s*:\s*(\d+)/,
-          /userId["']?\s*[:=]\s*["']?(\d+)/i,
-          /data-id=["'](\d+)["']/i
-        ];
-        
-        for (const pattern of patterns) {
-          const match = bodyText.match(pattern);
-          if (match && match[1]) return parseInt(match[1]);
-        }
-        
         return null;
       });
       
-        if (extractedUserId) {
-          log(`✅ UserId extracted from page: ${extractedUserId}`);
-        } else {
-          log('⚠️  Could not extract userId from page with any method');
-          log('⚠️  Will try API call without New-Api-User header (likely to fail)');
-        }
-      } catch (err) {
-        log(`⚠️  Error during page extraction: ${err.message}`);
+      if (extractedUserId) {
+        log(`✅ UserId extracted from localStorage: ${extractedUserId}`);
+      } else {
+        throw new Error('Could not extract userId from localStorage.livrouter_user');
       }
+    } catch (err) {
+      log(`❌ Error extracting userId: ${err.message}`);
+      throw new Error(`Failed to extract userId from localStorage: ${err.message}`);
     }
     
-    // Final check
-    if (!extractedUserId) {
-      log('❌ Failed to extract userId from network or page');
-    }
+    // Extract cookies from browser (after networkidle)
+    log('Extracting cookies from browser...');
+    const cookies = await page.cookies();
+    log(`Extracted ${cookies.length} cookie(s) from browser`);
+    const browserCookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+    log(`Full browser cookies: ${browserCookies}`);
 
     await sleep(config.delays.beforeBrowserClose);
     await browser.close();
