@@ -536,7 +536,6 @@ async function processLivRouterAccountOnce(
 ) {
   const config = getConfig();
   let oauthState = null;
-  let stateCookies = null;
   let sessionCookie = null;
   let userId = null;
   let apiKey = null;
@@ -546,11 +545,6 @@ async function processLivRouterAccountOnce(
   const axiosInstance = createAxiosInstance(proxy, log);
 
   try {
-    updateProgress({ step: 'Harvesting state' });
-    const phase0Result = await harvestOAuthState(axiosInstance, log, affCode);
-    oauthState = phase0Result.state;
-    stateCookies = phase0Result.cookies;
-
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
     log(`Launching browser for ${account.email} (GitHub OAuth)`);
 
@@ -558,80 +552,163 @@ async function processLivRouterAccountOnce(
     browser = browserResult.browser;
     const page = browserResult.page;
 
-    // Set Phase 0 cookies in browser (critical for OAuth state validation)
-    if (stateCookies) {
-      log('Setting Phase 0 session cookies in browser...');
+    // Navigate to LivRouter login page
+    updateProgress({ step: 'Opening login page' });
+    log('Navigating to LivRouter login page...');
+    await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle2' });
+    log('Login page loaded');
+    
+    // Click consent checkbox
+    log('Looking for consent checkbox...');
+    const checkboxSelector = '.login-policy-consent input[type="checkbox"]';
+    await page.waitForSelector(checkboxSelector, { timeout: 10000, visible: true });
+    await page.click(checkboxSelector);
+    log('✅ Consent checkbox clicked');
+    
+    await sleep(500);
+    
+    // Click GitHub button
+    log('Looking for GitHub login button...');
+    const githubButtonSelector = '.login-social-button.login-social-github';
+    await page.waitForSelector(githubButtonSelector, { timeout: 10000, visible: true });
+    
+    log('Clicking GitHub button to initiate OAuth...');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+      page.click(githubButtonSelector)
+    ]);
+    log('✅ Navigated to GitHub OAuth page');
+
+    // GitHub Login
+    updateProgress({ step: STEPS.GOOGLE_LOGIN });
+    log('Filling GitHub login form...');
+    
+    const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
+    await emailInput.click({ clickCount: 3 });
+    await page.keyboard.type(account.email, { delay: 50 });
+
+    const passwordInput = await page.waitForSelector('input#password', { timeout: 5000, visible: true });
+    await passwordInput.click({ clickCount: 3 });
+    await page.keyboard.type(account.password, { delay: 50 });
+
+    await sleep(500);
+    log('Submitting GitHub login form...');
+    await page.keyboard.press('Enter');
+
+    log('Waiting for navigation after login...');
+    try {
+      await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+    } catch (navErr) {
+      log('Navigation wait timeout (continuing anyway)');
+    }
+
+    // Check for authorization page
+    log('Checking for authorization page...');
+    const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', { 
+      timeout: 15000, 
+      visible: true 
+    }).then(() => true).catch(() => false);
+    
+    if (buttonFound) {
+      log('Authorization button found, clicking...');
+      await sleep(2000);
+      
       try {
-        const cookieStrings = stateCookies.split('; ').filter(c => c.trim());
-        const cookies = cookieStrings.map(cookieStr => {
-          const [name, ...valueParts] = cookieStr.split('=');
-          const value = valueParts.join('='); // In case value contains =
-          return {
-            name: name.trim(),
-            value: value.trim(),
-            domain: 'livrouter.com',
-            path: '/',
-            httpOnly: true,
-            secure: true,
-            sameSite: 'Strict'
-          };
-        });
-        await page.setCookie(...cookies);
-        log(`✅ Set ${cookies.length} Phase 0 cookie(s) in browser`);
-      } catch (cookieErr) {
-        log(`⚠️  Warning: Failed to set cookies: ${cookieErr.message}`);
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+          page.click('button[name="authorize"][value="1"]', { delay: 100 })
+        ]);
+        log('✅ Authorization completed, navigated to callback');
+      } catch (err) {
+        log(`Click failed: ${err.message}, trying JavaScript click...`);
+        
+        try {
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+            page.evaluate(() => {
+              const btn = document.querySelector('button[name="authorize"][value="1"]');
+              if (btn) btn.click();
+            })
+          ]);
+          log('✅ Authorization completed via JavaScript click');
+        } catch (err2) {
+          log(`⚠️ All click methods failed: ${err2.message}`);
+          throw new Error('Failed to complete authorization');
+        }
       }
     } else {
-      log('⚠️  Warning: No Phase 0 cookies to set');
-    }
-
-    try {
-      updateProgress({ step: STEPS.GOOGLE_LOGIN });
-
-      const oauthUrl = buildGitHubOAuthUrl(oauthState);
-      const result = await executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthState, log);
-      const browserCookies = result.cookies;
-
-      await sleep(config.delays.beforeBrowserClose);
-      await browser.close();
-      browser = null;
-      log('Browser closed (OAuth complete)');
-
-      updateProgress({ step: 'Getting user info' });
+      log('No authorization button - assuming already authorized');
+      log('Waiting for automatic redirect to callback...');
       
-      // Browser already completed OAuth exchange, extract session cookie
-      const sessionMatch = browserCookies.match(/session=([^;]+)/);
-      if (!sessionMatch) {
-        throw new Error('No session cookie found in browser cookies after OAuth');
-      }
-      sessionCookie = sessionMatch[1].trim();
-      log(`Session cookie extracted (first 30): ${sessionCookie.substring(0, 30)}...`);
-      
-      // Get user info (including userId) using the session cookie
-      const userInfo = await getUserInfo(axiosInstance, browserCookies, log);
-      userId = userInfo.userId;
-
-      updateProgress({ step: STEPS.HARVESTING });
-
-      await createToken(axiosInstance, sessionCookie, userId, log);
-      const tokenId = await getTokenId(axiosInstance, sessionCookie, userId, log);
-      apiKey = await revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log);
-      saveApiKey(account.email, userId, apiKey, log);
-
-      updateProgress({ step: 'Harvesting aff code' });
       try {
-        newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
-      } catch (affErr) {
-        log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
-      }
-
-      log(`Account harvest successful: ${account.email}`);
-    } finally {
-      if (browser) {
-        await browser.close().catch(() => {});
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
+        log('✅ Automatic redirect to callback completed');
+      } catch (err) {
+        log(`⚠️ No automatic redirect detected: ${err.message}`);
       }
     }
+    
+    // Wait for callback page to process
+    log('Waiting for callback page to complete OAuth exchange...');
+    await sleep(3000);
+    
+    const finalUrl = page.url();
+    log(`Final URL after OAuth: ${finalUrl}`);
+    
+    // Check for error page
+    if (finalUrl.includes('/error') || finalUrl.includes('mismatch')) {
+      const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+      log(`❌ OAuth flow ended on error page`);
+      log(`Error page content: ${pageText.substring(0, 300)}`);
+      throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
+    }
+    
+    // Extract cookies from browser
+    const cookies = await page.cookies();
+    log(`Extracted ${cookies.length} cookie(s) from browser after OAuth`);
+    const browserCookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
+
+    await sleep(config.delays.beforeBrowserClose);
+    await browser.close();
+    browser = null;
+    log('Browser closed (OAuth complete)');
+
+    updateProgress({ step: 'Getting user info' });
+    
+    // Browser already completed OAuth exchange, extract session cookie
+    const sessionMatch = browserCookies.match(/session=([^;]+)/);
+    if (!sessionMatch) {
+      throw new Error('No session cookie found in browser cookies after OAuth');
+    }
+    sessionCookie = sessionMatch[1].trim();
+    log(`Session cookie extracted (first 30): ${sessionCookie.substring(0, 30)}...`);
+    
+    // Get user info (including userId) using the session cookie
+    const userInfo = await getUserInfo(axiosInstance, browserCookies, log);
+    userId = userInfo.userId;
+
+    updateProgress({ step: STEPS.HARVESTING });
+
+    await createToken(axiosInstance, sessionCookie, userId, log);
+    const tokenId = await getTokenId(axiosInstance, sessionCookie, userId, log);
+    apiKey = await revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log);
+    saveApiKey(account.email, userId, apiKey, log);
+
+    updateProgress({ step: 'Harvesting aff code' });
+    try {
+      newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
+    } catch (affErr) {
+      log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
+    }
+
+    log(`Account harvest successful: ${account.email}`);
+  } catch (error) {
+    log(`Error in processLivRouterAccountOnce: ${error.message}`);
+    throw error;
   } finally {
+    if (browser) {
+      await browser.close().catch(() => {});
+    }
   }
 
   return newAffCode;
