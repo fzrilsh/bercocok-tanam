@@ -1,0 +1,1107 @@
+const fs = require('fs');
+const path = require('path');
+const axios = require('axios');
+const { HttpsProxyAgent } = require('https-proxy-agent');
+const { getConfig, getResultFile, ROOT_DIR } = require('../../config');
+const { sleep, createFileLogger, formatDuration, ensureFileExists, acquireProxy, releaseProxy } = require('../../utils');
+const { launchBrowser } = require('../../browser');
+const { STEPS, createProgressManager } = require('../../cli/progress');
+const { printReport } = require('../../cli/reporter');
+
+const BASE_URL = 'https://livrouter.com';
+const GITHUB_CLIENT_ID = 'Ov23lizY0ILAlo5BAEBa';
+const RESULT_FILE = path.join(ROOT_DIR, 'livrouter_keys.txt');
+
+function buildStealthHeaders() {
+  return {
+    'accept': 'application/json',
+    'accept-language': 'en-US,en;q=0.9',
+    'cache-control': 'no-cache',
+    'pragma': 'no-cache',
+    'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  };
+}
+
+function createAxiosInstance(proxy, log) {
+  const config = {
+    timeout: 30000,
+    headers: buildStealthHeaders(),
+    validateStatus: () => true
+  };
+
+  if (proxy) {
+    let proxyUrl = proxy;
+    if (!proxy.startsWith('http://') && !proxy.startsWith('https://')) {
+      proxyUrl = `http://${proxy}`;
+    }
+
+    try {
+      const httpsAgent = new HttpsProxyAgent(proxyUrl);
+      config.httpsAgent = httpsAgent;
+      config.proxy = false;
+
+      const proxyDisplay = proxyUrl.includes('@') 
+        ? proxyUrl.split('@')[1].replace(/^https?:\/\//, '')
+        : proxyUrl.replace(/^https?:\/\//, '');
+
+      log(`Using proxy: ${proxyDisplay}`);
+    } catch (err) {
+      log(`Proxy config error: ${err.message} - proceeding without proxy`);
+    }
+  }
+
+  return axios.create(config);
+}
+
+async function axiosRequestWithRetry(axiosInstance, method, url, options, log, maxRetries = 5) {
+  let attempt = 0;
+
+  while (attempt < maxRetries) {
+    try {
+      const response = await axiosInstance.request({ method, url, ...options });
+
+      if (response.status === 429) {
+        attempt++;
+        if (attempt < maxRetries) {
+          log(`Got HTTP 429, retry ${attempt}/${maxRetries} after 2s...`);
+          await sleep(2000);
+          continue;
+        }
+        throw new Error(`HTTP 429 persisted after ${maxRetries} retries`);
+      }
+
+      if (response.status >= 500 && response.status < 600) {
+        attempt++;
+        if (attempt < maxRetries) {
+          log(`Got ${response.status}, retry ${attempt}/${maxRetries} after 2s...`);
+          await sleep(2000);
+          continue;
+        }
+        return response;
+      }
+
+      return response;
+
+    } catch (err) {
+      attempt++;
+      if (attempt >= maxRetries) {
+        throw new Error(`Network error after ${maxRetries} attempts: ${err.message}`);
+      }
+      log(`Network error: ${err.message}, retry ${attempt}/${maxRetries}...`);
+      await sleep(2000);
+    }
+  }
+
+  throw new Error(`Failed after ${maxRetries} retries`);
+}
+
+async function harvestOAuthState(axiosInstance, log, affCode = null) {
+  log('Phase 0: Harvesting OAuth state...');
+
+  let url = `${BASE_URL}/api/gateway/oauth/state`;
+  if (affCode) {
+    url += `?aff=${affCode}`;
+    log(`Using affiliate code: ${affCode}`);
+  }
+
+  const response = await axiosRequestWithRetry(axiosInstance, 'GET', url, {}, log);
+
+  if (response.status !== 200) {
+    throw new Error(`OAuth state failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const data = response.data;
+  if (!data.success || !data.data) {
+    throw new Error(`OAuth state failed: ${JSON.stringify(data)}`);
+  }
+
+  const oauthState = data.data;
+  log(`OAuth state harvested: ${oauthState}`);
+
+  const setCookieHeader = response.headers['set-cookie'];
+  let stateCookies = '';
+
+  if (setCookieHeader) {
+    const cookieArray = Array.isArray(setCookieHeader) ? setCookieHeader : [setCookieHeader];
+    stateCookies = cookieArray.map(cookie => cookie.split(';')[0].trim()).join('; ');
+    if (stateCookies) {
+      log(`Phase 0 cookies captured: ${stateCookies.substring(0, 60)}...`);
+    }
+  }
+
+  return { state: oauthState, cookies: stateCookies };
+}
+
+function buildGitHubOAuthUrl(oauthState) {
+  const oauthParams = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    scope: 'user:email',
+    state: oauthState,
+    new_signup: 'true'
+  });
+  
+  const returnTo = `/login/oauth/authorize?${oauthParams.toString()}`;
+  const loginParams = new URLSearchParams({
+    client_id: GITHUB_CLIENT_ID,
+    return_to: returnTo
+  });
+  
+  return `https://github.com/login?${loginParams.toString()}`;
+}
+
+async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthState, log) {
+  log('Phase 1: Starting GitHub OAuth flow...');
+
+  let interceptedCode = null;
+  let interceptedState = null;
+
+  // Set up request listener BEFORE any navigation (to catch fast redirects)
+  const requestHandler = (request) => {
+    const url = request.url();
+    if (url.includes('livrouter.com/oauth/github') && url.includes('code=')) {
+      try {
+        const urlObj = new URL(url);
+        const code = urlObj.searchParams.get('code');
+        const state = urlObj.searchParams.get('state');
+        if (code && state && !interceptedCode) {
+          interceptedCode = code;
+          interceptedState = state;
+          log(`🎯 Captured OAuth callback: code=${code.substring(0, 20)}..., state=${state}`);
+        }
+      } catch (err) {
+        log(`Error parsing callback URL: ${err.message}`);
+      }
+    }
+  };
+  
+  page.on('request', requestHandler);
+  log('Request listener set up to capture OAuth callback');
+
+  log('Navigating to GitHub OAuth URL...');
+  await page.goto(oauthUrl, { waitUntil: 'networkidle2' });
+
+  log('Filling GitHub login form...');
+  const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
+  await emailInput.click({ clickCount: 3 });
+  await page.keyboard.type(account.email, { delay: 50 });
+
+  const passwordInput = await page.waitForSelector('input#password', { timeout: 5000, visible: true });
+  await passwordInput.click({ clickCount: 3 });
+  await page.keyboard.type(account.password, { delay: 50 });
+
+  await sleep(500);
+  log('Submitting login form...');
+  await page.keyboard.press('Enter');
+
+  log('Waiting for navigation to authorization page...');
+  try {
+    await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+  } catch (navErr) {
+    log('Navigation wait timeout (continuing anyway)');
+  }
+
+  log('Waiting for authorization page...');
+  
+  try {
+    // Try to find authorization button (OPTIONAL - might already be authorized)
+    log('Checking for Authorize button...');
+    const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', { 
+      timeout: 15000, 
+      visible: true 
+    }).then(() => true).catch(() => false);
+    
+    if (buttonFound) {
+      log('Authorization button found, attempting to click...');
+      await sleep(2000);
+      
+      let clickSucceeded = false;
+      
+      // Try Method 1: Puppeteer click
+      log('Trying click method 1: page.click()...');
+      try {
+        await Promise.all([
+          page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
+          page.click('button[name="authorize"][value="1"]', { delay: 100 })
+        ]);
+        log('✅ Click method 1 succeeded - navigation detected');
+        clickSucceeded = true;
+      } catch (err) {
+        log(`❌ Click method 1 failed: ${err.message}`);
+      }
+      
+      // Try Method 2: JavaScript click
+      if (!clickSucceeded) {
+        log('Trying click method 2: JavaScript element.click()...');
+        try {
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
+            page.evaluate(() => {
+              const btn = document.querySelector('button[name="authorize"][value="1"]');
+              if (btn) btn.click();
+            })
+          ]);
+          log('✅ Click method 2 succeeded - navigation detected');
+          clickSucceeded = true;
+        } catch (err) {
+          log(`❌ Click method 2 failed: ${err.message}`);
+        }
+      }
+      
+      // Try Method 3: Form submit
+      if (!clickSucceeded) {
+        log('Trying click method 3: form.submit()...');
+        try {
+          await Promise.all([
+            page.waitForNavigation({ waitUntil: 'load', timeout: 10000 }),
+            page.evaluate(() => {
+              const btn = document.querySelector('button[name="authorize"][value="1"]');
+              const form = btn ? btn.closest('form') : null;
+              if (form) {
+                form.submit();
+              } else {
+                throw new Error('Form not found');
+              }
+            })
+          ]);
+          log('✅ Click method 3 succeeded - navigation detected');
+          clickSucceeded = true;
+        } catch (err) {
+          log(`❌ Click method 3 failed: ${err.message}`);
+        }
+      }
+      
+      if (!clickSucceeded) {
+        log('⚠️  All click methods failed, but continuing (might already be authorized)');
+      }
+    } else {
+      log('✅ No authorization button found - assuming already authorized, continuing...');
+    }
+    
+    // Wait a bit for OAuth callback to be captured (whether we clicked or not)
+    log('Waiting for OAuth callback to be captured...');
+    await sleep(5000);
+    
+    // Check if we captured code and state from the request
+    if (interceptedCode && interceptedState) {
+      log(`✅ Successfully captured code and state from OAuth callback`);
+    } else {
+      // Fallback: try to get from current URL
+      const currentUrl = page.url();
+      log(`Request handler didn't capture callback, checking current URL: ${currentUrl}`);
+      
+      const urlObj = new URL(currentUrl);
+      interceptedCode = urlObj.searchParams.get('code');
+      interceptedState = urlObj.searchParams.get('state');
+      
+      if (!interceptedCode || !interceptedState) {
+        log(`⚠️  Code: ${interceptedCode || 'MISSING'}`);
+        log(`⚠️  State: ${interceptedState || 'MISSING'}`);
+        throw new Error('Failed to capture code and state from OAuth callback');
+      }
+    }
+    
+  } catch (authErr) {
+    log(`Authorization error: ${authErr.message}`);
+    throw new Error(`Authorization failed: ${authErr.message}`);
+  } finally {
+    // Clean up request listener
+    page.off('request', requestHandler);
+  }
+
+  if (!interceptedCode || !interceptedState) {
+    throw new Error('Failed to extract OAuth callback code/state from URL');
+  }
+
+  log('GitHub OAuth authorization successful!');
+  return { code: interceptedCode, state: interceptedState };
+}
+
+async function exchangeOAuthCallback(axiosInstance, code, state, originalState, stateCookies, log) {
+  log('Phase 2: Exchanging OAuth callback for session...');
+
+  if (state !== originalState) {
+    throw new Error(`State mismatch! Expected "${originalState}" but got "${state}"`);
+  }
+
+  log(`State validated: ${state}`);
+
+  const url = `${BASE_URL}/api/gateway/oauth/github?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`;
+
+  const headers = {
+    'referer': `${BASE_URL}/oauth/github?code=${code}&state=${state}`,
+    'accept': '*/*',
+    'cache-control': 'no-cache',
+    'pragma': 'no-cache'
+  };
+
+  if (stateCookies) {
+    headers['cookie'] = stateCookies;
+    log(`Using Phase 0 cookies: ${stateCookies.substring(0, 60)}...`);
+  }
+
+  const response = await axiosRequestWithRetry(axiosInstance, 'GET', url, { headers }, log);
+
+  if (response.status !== 200) {
+    throw new Error(`OAuth callback failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const setCookieHeader = response.headers['set-cookie'];
+  if (!setCookieHeader) {
+    throw new Error('No set-cookie header in OAuth callback response');
+  }
+
+  const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : setCookieHeader;
+  const sessionMatch = setCookieStr.match(/session=([^;]+)/);
+  if (!sessionMatch) {
+    throw new Error('No session cookie found in set-cookie header');
+  }
+
+  const sessionCookie = sessionMatch[1].trim();
+  log(`Session cookie (first 30): ${sessionCookie.substring(0, 30)}...`);
+
+  const data = response.data;
+  if (!data.success || !data.data?.id) {
+    throw new Error(`OAuth callback failed: ${JSON.stringify(data)}`);
+  }
+
+  const userId = data.data.id;
+  log(`User ID: ${userId}`);
+
+  return { sessionCookie, userId };
+}
+
+function buildAuthHeaders(sessionCookie, userId) {
+  return {
+    'cookie': `session=${sessionCookie}`,
+    'new-api-user': String(userId),
+    'origin': BASE_URL,
+    'referer': `${BASE_URL}/api-keys`,
+    'content-type': 'application/json'
+  };
+}
+
+async function createToken(axiosInstance, sessionCookie, userId, log) {
+  log('Phase 3.1: Creating new token entry...');
+
+  const randomName = `api_${Date.now()}`;
+
+  const payload = {
+    name: randomName,
+    group: 'default',
+    expired_time: -1,
+    model_limits_enabled: false,
+    model_limits: '',
+    allow_ips: '',
+    cross_group_retry: false,
+    unlimited_quota: true,
+    remain_quota: -1
+  };
+
+  const response = await axiosRequestWithRetry(
+    axiosInstance,
+    'POST',
+    `${BASE_URL}/api/gateway/token/`,
+    {
+      headers: buildAuthHeaders(sessionCookie, userId),
+      data: payload
+    },
+    log
+  );
+
+  if (response.status !== 200) {
+    throw new Error(`Token creation failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const data = response.data;
+
+  if (!data.success) {
+    throw new Error(`Token creation failed: ${JSON.stringify(data)}`);
+  }
+
+  log('Token created successfully (fetching ID...)');
+}
+
+async function getTokenId(axiosInstance, sessionCookie, userId, log) {
+  log('Phase 3.2: Fetching token list to get token ID...');
+
+  const headers = buildAuthHeaders(sessionCookie, userId);
+
+  const response = await axiosRequestWithRetry(
+    axiosInstance,
+    'GET',
+    `${BASE_URL}/api/gateway/token/?p=1&page_size=10`,
+    { headers },
+    log
+  );
+
+  if (response.status !== 200) {
+    throw new Error(`Token list failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const data = response.data;
+
+  if (!data.success || !data.data?.items?.length) {
+    throw new Error(`Token list failed or empty: ${JSON.stringify(data)}`);
+  }
+
+  const tokenId = data.data.items[0].id;
+  log(`Token ID: ${tokenId}`);
+
+  return tokenId;
+}
+
+async function revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log) {
+  log('Phase 3.3: Revealing API key...');
+
+  const headers = buildAuthHeaders(sessionCookie, userId);
+  headers['content-length'] = '0';
+
+  const response = await axiosRequestWithRetry(
+    axiosInstance,
+    'POST',
+    `${BASE_URL}/api/gateway/token/${tokenId}/key`,
+    {
+      headers,
+      data: ''
+    },
+    log
+  );
+
+  if (response.status !== 200) {
+    throw new Error(`Key reveal failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const data = response.data;
+
+  if (!data.success) {
+    throw new Error(`Key reveal failed: ${JSON.stringify(data)}`);
+  }
+
+  const apiKey = data.data?.key || data.data;
+
+  if (!apiKey || typeof apiKey !== 'string') {
+    throw new Error(`Invalid API key format: ${JSON.stringify(data)}`);
+  }
+
+  log(`API Key harvested: ${apiKey.substring(0, 20)}...`);
+
+  return apiKey;
+}
+
+function saveApiKey(email, userId, apiKey, log) {
+  ensureFileExists(RESULT_FILE);
+
+  fs.appendFileSync(RESULT_FILE, `${email}|${userId}|${apiKey}\n`);
+
+  log(`API key saved to ${RESULT_FILE}`);
+}
+
+async function getAffiliateCode(axiosInstance, sessionCookie, userId, log) {
+  log('Fetching affiliate code...');
+
+  const headers = {
+    'accept': '*/*',
+    'cookie': `session=${sessionCookie}`,
+    'new-api-user': String(userId),
+    'referer': `${BASE_URL}/dashboard`,
+    'content-type': 'application/json',
+    'cache-control': 'no-cache',
+    'pragma': 'no-cache'
+  };
+
+  const response = await axiosRequestWithRetry(
+    axiosInstance,
+    'GET',
+    `${BASE_URL}/api/gateway/user/self`,
+    { headers },
+    log
+  );
+
+  if (response.status !== 200) {
+    log(`Failed to fetch affiliate code: HTTP ${response.status}`);
+    return null;
+  }
+
+  const data = response.data;
+
+  if (!data.success || !data.data?.aff_code) {
+    log(`No affiliate code found in response: ${JSON.stringify(data)}`);
+    return null;
+  }
+
+  const affCode = data.data.aff_code;
+  log(`Affiliate code harvested: ${affCode}`);
+
+  return affCode;
+}
+
+async function processLivRouterAccountOnce(
+  account,
+  browserArgsIndex,
+  workerIndex,
+  log,
+  updateProgress,
+  proxy,
+  poolProxy,
+  affCode = null
+) {
+  const config = getConfig();
+  let oauthState = null;
+  let stateCookies = null;
+  let sessionCookie = null;
+  let userId = null;
+  let apiKey = null;
+  let browser = null;
+  let newAffCode = null;
+
+  const axiosInstance = createAxiosInstance(proxy, log);
+
+  try {
+    updateProgress({ step: 'Harvesting state' });
+    const phase0Result = await harvestOAuthState(axiosInstance, log, affCode);
+    oauthState = phase0Result.state;
+    stateCookies = phase0Result.cookies;
+
+    updateProgress({ step: STEPS.LAUNCHING, email: account.email });
+    log(`Launching browser for ${account.email} (GitHub OAuth)`);
+
+    const browserResult = await launchBrowser(browserArgsIndex, workerIndex, null);
+    browser = browserResult.browser;
+    const page = browserResult.page;
+
+    // Set Phase 0 cookies in browser (critical for OAuth state validation)
+    if (stateCookies) {
+      log('Setting Phase 0 session cookies in browser...');
+      try {
+        const cookieStrings = stateCookies.split('; ').filter(c => c.trim());
+        const cookies = cookieStrings.map(cookieStr => {
+          const [name, ...valueParts] = cookieStr.split('=');
+          const value = valueParts.join('='); // In case value contains =
+          return {
+            name: name.trim(),
+            value: value.trim(),
+            domain: 'livrouter.com',
+            path: '/',
+            httpOnly: true,
+            secure: true,
+            sameSite: 'Strict'
+          };
+        });
+        await page.setCookie(...cookies);
+        log(`✅ Set ${cookies.length} Phase 0 cookie(s) in browser`);
+      } catch (cookieErr) {
+        log(`⚠️  Warning: Failed to set cookies: ${cookieErr.message}`);
+      }
+    } else {
+      log('⚠️  Warning: No Phase 0 cookies to set');
+    }
+
+    try {
+      updateProgress({ step: STEPS.GOOGLE_LOGIN });
+
+      const oauthUrl = buildGitHubOAuthUrl(oauthState);
+      const result = await executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthState, log);
+      const code = result.code;
+      const state = result.state;
+
+      await sleep(config.delays.beforeBrowserClose);
+      await browser.close();
+      browser = null;
+      log('Browser closed (OAuth complete)');
+
+      updateProgress({ step: 'Exchanging session' });
+      const sessionData = await exchangeOAuthCallback(axiosInstance, code, state, oauthState, stateCookies, log);
+      sessionCookie = sessionData.sessionCookie;
+      userId = sessionData.userId;
+
+      updateProgress({ step: STEPS.HARVESTING });
+
+      await createToken(axiosInstance, sessionCookie, userId, log);
+      const tokenId = await getTokenId(axiosInstance, sessionCookie, userId, log);
+      apiKey = await revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log);
+      saveApiKey(account.email, userId, apiKey, log);
+
+      updateProgress({ step: 'Harvesting aff code' });
+      try {
+        newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
+      } catch (affErr) {
+        log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
+      }
+
+      log(`Account harvest successful: ${account.email}`);
+    } finally {
+      if (browser) {
+        await browser.close().catch(() => {});
+      }
+    }
+  } finally {
+  }
+
+  return newAffCode;
+}
+
+async function processLivRouterAccount(
+  account,
+  browserArgsIndex,
+  workerIndex,
+  log,
+  updateProgress,
+  useProxy = true,
+  affCode = null
+) {
+  const config = getConfig();
+  let poolProxy = null;
+  let proxy = account.proxy || null;
+
+  if (!proxy && config.proxyPoolFile && useProxy) {
+    poolProxy = await acquireProxy(log, updateProgress);
+    proxy = poolProxy;
+  }
+
+  try {
+    const newAffCode = await processLivRouterAccountOnce(
+      account,
+      browserArgsIndex,
+      workerIndex,
+      log,
+      updateProgress,
+      proxy,
+      poolProxy,
+      affCode
+    );
+
+    if (poolProxy) {
+      releaseProxy(poolProxy);
+      log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+    }
+
+    return newAffCode;
+
+  } catch (error) {
+    if (poolProxy) {
+      releaseProxy(poolProxy);
+      log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+    }
+    throw error;
+  }
+}
+
+async function runLivRouterWorker(
+  workerAccounts,
+  workerId,
+  browserArgsIndex,
+  workerIndex,
+  total,
+  progress,
+  log,
+  useProxy = true
+) {
+  const config = getConfig();
+
+  let successCount = 0;
+  let failedCount = 0;
+  let processedCount = 0;
+  let lastAffiliateCode = null;
+
+  const accountStats = [];
+
+  for (const account of workerAccounts) {
+    const updateProgress = (payload) => {
+      progress.updateWorker(workerId, {
+        ...payload,
+        email: account.email,
+        success: successCount,
+        failed: failedCount,
+        current: processedCount
+      });
+    };
+
+    const startTime = Date.now();
+    let accountSuccess = false;
+    let accountError = null;
+
+    try {
+      const newAffCode = await processLivRouterAccount(
+        account,
+        browserArgsIndex,
+        workerIndex,
+        log,
+        updateProgress,
+        useProxy,
+        lastAffiliateCode
+      );
+
+      if (newAffCode) {
+        lastAffiliateCode = newAffCode;
+        log(`Affiliate code updated for next account: ${newAffCode}`);
+      }
+
+      accountSuccess = true;
+      successCount += 1;
+      processedCount += 1;
+
+      progress.updateWorker(workerId, {
+        step: STEPS.DONE,
+        email: account.email,
+        success: successCount,
+        failed: failedCount,
+        current: processedCount
+      });
+    } catch (error) {
+      accountSuccess = false;
+      accountError = error.message;
+      failedCount += 1;
+      processedCount += 1;
+
+      browserArgsIndex = (browserArgsIndex + 1) % config.browserArgsSets.length;
+
+      log(`[${workerId}] Error: ${error.message}`);
+
+      progress.updateWorker(workerId, {
+        step: STEPS.ERROR,
+        email: account.email,
+        success: successCount,
+        failed: failedCount,
+        current: processedCount
+      });
+    } finally {
+      const duration = Date.now() - startTime;
+
+      accountStats.push({
+        email: account.email,
+        rawLine: account.rawLine,
+        success: accountSuccess,
+        duration,
+        error: accountError
+      });
+    }
+
+    if (processedCount < workerAccounts.length) {
+      progress.updateWorker(workerId, { step: STEPS.WAITING });
+      await sleep(config.delays.betweenAccounts);
+    }
+  }
+
+  progress.updateWorker(workerId, {
+    step: STEPS.DONE,
+    email: 'Done',
+    success: successCount,
+    failed: failedCount,
+    current: workerAccounts.length
+  });
+
+  return {
+    successCount,
+    failedCount,
+    accounts: accountStats,
+    label: `LivRouter W${workerIndex + 1}`
+  };
+}
+
+async function runLivRouterAutomation(sharedProgress = null, useProxy = true, options = {}) {
+  const config = getConfig();
+  const logger = createFileLogger();
+
+  let accounts;
+
+  if (options.mode === 'create') {
+    const { runGitHubSignupAutomation } = require('../github');
+    const createCount = options.createCount || 1;
+    const tempEmailProvider = options.tempEmailProvider || null;
+
+    logger.log(`Creating ${createCount} GitHub account(s) for LivRouter...`);
+    const githubResult = await runGitHubSignupAutomation(createCount, sharedProgress, useProxy, tempEmailProvider);
+    if (!githubResult || githubResult.successCount === 0) {
+      logger.log('No GitHub accounts created, aborting LivRouter');
+      logger.close();
+      return null;
+    }
+  }
+
+  const GITHUB_KEYS_FILE = path.join(ROOT_DIR, 'github_keys.txt');
+
+  if (!fs.existsSync(GITHUB_KEYS_FILE)) {
+    if (!sharedProgress) {
+      console.log('No github_keys.txt found. Create GitHub accounts first or use existing accounts.');
+    }
+    logger.close();
+    return null;
+  }
+
+  const lines = fs.readFileSync(GITHUB_KEYS_FILE, 'utf-8')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+
+  accounts = lines.map((rawLine) => {
+    const parts = rawLine.includes(':') ? rawLine.split(':') : rawLine.split('|');
+    const email = parts[0]?.trim() || '';
+    const password = parts[1]?.trim() || '';
+    return { email, password, username: parts[2]?.trim() || email.split('@')[0], proxy: null, rawLine };
+  }).filter((a) => a.email && a.password);
+
+  if (accounts.length === 0) {
+    if (!sharedProgress) {
+      console.log('No GitHub accounts found in github_keys.txt');
+    }
+    logger.close();
+    return null;
+  }
+
+  if (!sharedProgress) {
+    console.log('');
+    console.log(`🔑 LivRouter automation (GitHub OAuth) — ${accounts.length} accounts`);
+    console.log('');
+  }
+
+  const startedAt = Date.now();
+  const chunks = accounts.length > config.browserCount 
+    ? Array.from({ length: config.browserCount }, (_, i) => 
+        accounts.filter((_, idx) => idx % config.browserCount === i))
+    : [accounts];
+
+  const progress = sharedProgress || createProgressManager(
+    `🔑 LivRouter (GitHub) — ${accounts.length} accounts, ${chunks.length} workers`
+  );
+
+  chunks.forEach((chunk, i) => {
+    progress.addWorker(`livrouter-${i}`, chunk.length, `LivRouter W${i + 1}`);
+  });
+
+  const results = await Promise.all(
+    chunks.map((chunk, i) => {
+      const browserArgsIndex = i % config.browserArgsSets.length;
+
+      return runLivRouterWorker(
+        chunk,
+        `livrouter-${i}`,
+        browserArgsIndex,
+        i,
+        accounts.length,
+        progress,
+        logger.log,
+        useProxy
+      );
+    })
+  );
+
+  if (!sharedProgress) {
+    progress.stop();
+  }
+
+  const successCount = results.reduce((sum, r) => sum + r.successCount, 0);
+  const failedCount = results.reduce((sum, r) => sum + r.failedCount, 0);
+  const totalDuration = Date.now() - startedAt;
+
+  if (!sharedProgress) {
+    printReport('🔑 LIVROUTER AUTOMATION REPORT', results, totalDuration);
+    console.log(`📄 Log: ${logger.logFile}`);
+    console.log('');
+  } else {
+    const duration = formatDuration(totalDuration);
+    logger.log(
+      `LivRouter finished. Success: ${successCount}, Failed: ${failedCount}, Duration: ${duration}`
+    );
+  }
+
+  logger.close();
+
+  return { successCount, failedCount, results };
+}
+
+async function runLivRouterCreateAndImport(
+  createCount = 1,
+  sharedProgress = null,
+  useProxy = true,
+  tempEmailProvider = null
+) {
+  const config = getConfig();
+  const logger = createFileLogger();
+  const { createGitHubAccountViaPython } = require('../github');
+
+  if (createCount <= 0) {
+    if (!sharedProgress) console.log('Create count must be > 0');
+    logger.close();
+    return null;
+  }
+
+  if (!sharedProgress) {
+    console.log('');
+    console.log('LivRouter Pipeline: Create GitHub → LivRouter OAuth');
+    console.log(`   Count: ${createCount}`);
+    console.log('   Each success GitHub account immediately logs into LivRouter.');
+    console.log('');
+  }
+
+  const startedAt = Date.now();
+  const progress = sharedProgress || createProgressManager(
+    `LivRouter Create+Import — ${createCount} accounts`
+  );
+
+  const workerId = 'livrouter-pipeline-0';
+  progress.addWorker(workerId, createCount, 'LivRouter Pipeline');
+
+  let successCount = 0;
+  let failedCount = 0;
+  let processedCount = 0;
+  let lastAffiliateCode = null;
+  const accountStats = [];
+
+  for (let i = 0; i < createCount; i++) {
+    const updateProgress = (payload) => {
+      progress.updateWorker(workerId, {
+        ...payload,
+        success: successCount,
+        failed: failedCount,
+        current: processedCount
+      });
+    };
+
+    const startTime = Date.now();
+    let accountEmail = `account-${i + 1}`;
+    let accountSuccess = false;
+    let accountError = null;
+    let rawLine = `failed-${i + 1}`;
+
+    try {
+      updateProgress({
+        step: STEPS.LAUNCHING,
+        email: `Creating GitHub ${i + 1}/${createCount}...`
+      });
+      logger.log(`[Pipeline] Creating GitHub account ${i + 1}/${createCount}...`);
+
+      const createResult = await createGitHubAccountViaPython(
+        i,
+        useProxy,
+        logger.log,
+        updateProgress,
+        tempEmailProvider
+      );
+
+      if (!createResult?.success || !createResult.account) {
+        throw new Error('GitHub account creation failed');
+      }
+
+      const account = {
+        email: createResult.account.email,
+        password: createResult.account.password,
+        username: createResult.account.username,
+        proxy: null,
+        rawLine: `${createResult.account.email}:${createResult.account.password}:${createResult.account.username}`
+      };
+      accountEmail = account.email;
+      rawLine = account.rawLine;
+
+      logger.log(`[Pipeline] GitHub created: ${account.email} — starting LivRouter OAuth...`);
+
+      updateProgress({
+        step: STEPS.NAVIGATING,
+        email: `LivRouter login: ${account.email}`
+      });
+
+      const newAffCode = await processLivRouterAccount(
+        account,
+        i % config.browserArgsSets.length,
+        0,
+        logger.log,
+        updateProgress,
+        useProxy,
+        lastAffiliateCode
+      );
+
+      if (newAffCode) {
+        lastAffiliateCode = newAffCode;
+        logger.log(`[Pipeline] Affiliate code updated: ${newAffCode}`);
+      }
+
+      accountSuccess = true;
+      successCount += 1;
+      processedCount += 1;
+
+      progress.updateWorker(workerId, {
+        step: STEPS.DONE,
+        email: account.email,
+        success: successCount,
+        failed: failedCount,
+        current: processedCount
+      });
+
+      logger.log(`[Pipeline] SUCCESS: ${account.email} GitHub + LivRouter`);
+    } catch (error) {
+      accountSuccess = false;
+      accountError = error.message;
+      failedCount += 1;
+      processedCount += 1;
+
+      logger.log(`[Pipeline] FAILED: ${accountEmail} — ${error.message}`);
+
+      progress.updateWorker(workerId, {
+        step: STEPS.ERROR,
+        email: accountEmail,
+        success: successCount,
+        failed: failedCount,
+        current: processedCount
+      });
+    } finally {
+      accountStats.push({
+        email: accountEmail,
+        rawLine,
+        success: accountSuccess,
+        duration: Date.now() - startTime,
+        error: accountError
+      });
+    }
+
+    if (i < createCount - 1) {
+      progress.updateWorker(workerId, { step: STEPS.WAITING });
+      await sleep(config.delays.betweenAccounts || 10000);
+    }
+  }
+
+  progress.updateWorker(workerId, {
+    step: STEPS.DONE,
+    email: 'Done',
+    success: successCount,
+    failed: failedCount,
+    current: createCount
+  });
+
+  if (!sharedProgress) {
+    progress.stop();
+  }
+
+  const results = [
+    {
+      successCount,
+      failedCount,
+      accounts: accountStats,
+      label: 'LivRouter Pipeline'
+    }
+  ];
+  const totalDuration = Date.now() - startedAt;
+
+  if (!sharedProgress) {
+    printReport('LIVROUTER CREATE+IMPORT REPORT', results, totalDuration);
+    console.log(`Log: ${logger.logFile}`);
+    console.log('');
+  } else {
+    logger.log(
+      `LivRouter pipeline finished. Success: ${successCount}, Failed: ${failedCount}, Duration: ${formatDuration(totalDuration)}`
+    );
+  }
+
+  logger.close();
+
+  return { successCount, failedCount, results };
+}
+
+module.exports = {
+  runLivRouterAutomation,
+  runLivRouterCreateAndImport
+};

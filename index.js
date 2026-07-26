@@ -7,6 +7,7 @@ const { runKiroAutomation } = require("./src/automations/kiro");
 const { runCloudflareAutomation } = require("./src/automations/cloudflare");
 const { runCodebuddyAutomation, runCodebuddyCreateAndImport } = require("./src/automations/codebuddy");
 const { runTokenGoAutomation } = require("./src/automations/tokengo");
+const { runLivRouterAutomation, runLivRouterCreateAndImport } = require("./src/automations/livrouter");
 const { runGitHubSignupAutomation, checkPythonAvailable } = require("./src/automations/github");
 const { runGrokAutomation } = require("./src/automations/grok");
 const { openSettings } = require("./src/cli/settings");
@@ -129,6 +130,8 @@ async function retryFailedAccounts(failedAccountsList, automationType) {
             result = await runCodebuddyAutomation();
         } else if (automationType === "tokengo") {
             result = await runTokenGoAutomation(null, true, tokengoOptions || {});
+        } else if (automationType === "livrouter") {
+            result = await runLivRouterAutomation(null, true, livrouterOptions || {});
         }
 
         updateEnvValue("ACCOUNT_FILE", originalConfig.accountFile);
@@ -239,6 +242,7 @@ async function runSelectedAutomations(
     grokTempEmailProvider = null,
     codebuddyOptions = null,
     tokengoOptions = null,
+    livrouterOptions = null,
 ) {
     const { createProgressManager } = require("./src/cli/progress");
     
@@ -247,6 +251,7 @@ async function runSelectedAutomations(
         cloudflare: { name: 'Cloudflare', fn: runCloudflareAutomation },
         codebuddy: { name: 'Codebuddy', fn: runCodebuddyAutomation },
         tokengo: { name: 'TokenGo', fn: runTokenGoAutomation },
+        livrouter: { name: 'LivRouter', fn: runLivRouterAutomation },
         github: { name: 'GitHub Signup', fn: runGitHubSignupAutomation },
         grok: { name: 'Grok Signup', fn: runGrokAutomation }
     };
@@ -305,6 +310,19 @@ async function runSelectedAutomations(
         }
         if (type === 'tokengo') {
             return automationMap[type].fn(sharedProgress, proxySettings[type], tokengoOptions || {});
+        }
+        if (type === 'livrouter') {
+            // Create mode: each GitHub success immediately runs LivRouter OAuth
+            if (livrouterOptions && livrouterOptions.mode === 'create') {
+                return runLivRouterCreateAndImport(
+                    livrouterOptions.createCount || 1,
+                    sharedProgress,
+                    proxySettings.livrouter,
+                    livrouterOptions.tempEmailProvider,
+                );
+            }
+            // Existing mode: use github_keys.txt
+            return automationMap[type].fn(sharedProgress, proxySettings[type], livrouterOptions || {});
         }
         return automationMap[type].fn(sharedProgress, proxySettings[type]);
     });
@@ -390,6 +408,7 @@ async function main() {
                     cloudflare: { name: 'Cloudflare' },
                     codebuddy: { name: 'Codebuddy' },
                     tokengo: { name: 'TokenGo' },
+                    livrouter: { name: 'LivRouter' },
                     github: { name: 'GitHub Signup' },
                     grok: { name: 'Grok Signup' }
                 };
@@ -420,6 +439,10 @@ async function main() {
                                 checked: true
                             },
                             { 
+                                name: "LivRouter Automation (GitHub OAuth, affiliate chaining)", 
+                                value: "livrouter"
+                            },
+                            { 
                                 name: "GitHub Signup (Create new GitHub accounts)", 
                                 value: "github"
                             },
@@ -439,6 +462,7 @@ async function main() {
                     let grokTempEmailProvider = null;
                     let codebuddyOptions = null;
                     let tokengoOptions = null;
+                    let livrouterOptions = null;
                     
                     if (selected.includes('github')) {
                         const { count } = await inquirer.prompt([
@@ -636,6 +660,69 @@ async function main() {
                             tokengoOptions = { mode: "existing", authMode: "github" };
                         }
                     }
+
+                    if (selected.includes("livrouter")) {
+                        const existingGithub = countGithubKeys();
+                        const choices = [
+                            {
+                                name: `Use existing github_keys.txt (${existingGithub} account${existingGithub === 1 ? "" : "s"})`,
+                                value: "existing",
+                                disabled: existingGithub === 0 ? "file empty / not found" : false,
+                            },
+                            {
+                                name: "Create GitHub account then immediately login LivRouter (per account)",
+                                value: "create",
+                            },
+                        ];
+
+                        const { livrouterMode } = await inquirer.prompt([
+                            {
+                                type: "list",
+                                name: "livrouterMode",
+                                message: "LivRouter account source (GitHub OAuth):",
+                                choices,
+                                default: existingGithub > 0 ? "existing" : "create",
+                            },
+                        ]);
+
+                        if (livrouterMode === "create") {
+                            const { createCount } = await inquirer.prompt([
+                                {
+                                    type: "input",
+                                    name: "createCount",
+                                    message: "How many GitHub accounts to create + login to LivRouter?",
+                                    default: "1",
+                                    validate: (input) => {
+                                        const num = parseInt(input);
+                                        if (isNaN(num) || num <= 0) return "Please enter a valid positive number";
+                                        return true;
+                                    },
+                                },
+                            ]);
+
+                            const { providers } = await inquirer.prompt([
+                                {
+                                    type: "checkbox",
+                                    name: "providers",
+                                    message: "Select temp email providers for GitHub signup (auto = random from selected):",
+                                    choices: [
+                                        { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
+                                        { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                        { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                        { name: "mail.cx (API token + custom domains)", value: "mailcx", checked: false },
+                                    ],
+                                },
+                            ]);
+
+                            livrouterOptions = {
+                                mode: "create",
+                                createCount: parseInt(createCount),
+                                tempEmailProvider: providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers),
+                            };
+                        } else {
+                            livrouterOptions = { mode: "existing" };
+                        }
+                    }
                     
                     const proxies = readProxyPool();
                     let proxySettings = {};
@@ -684,6 +771,7 @@ async function main() {
                         grokTempEmailProvider,
                         codebuddyOptions,
                         tokengoOptions,
+                        livrouterOptions,
                     );
                 }
                 // If selection is empty, just continue loop (back to main menu)
