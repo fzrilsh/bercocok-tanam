@@ -3,6 +3,7 @@ const path = require('path');
 const axios = require('axios');
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { getConfig, getResultFile, ROOT_DIR } = require('../../config');
+const { createRouter } = require('../../providers/router');
 const { sleep, createFileLogger, formatDuration, ensureFileExists, acquireProxy, releaseProxy } = require('../../utils');
 const { launchBrowser } = require('../../browser');
 const { STEPS, createProgressManager } = require('../../cli/progress');
@@ -540,6 +541,31 @@ async function getAffiliateCode(axiosInstance, sessionCookie, userId, log) {
   return affCode;
 }
 
+async function registerToRouter(userId, apiKey, log) {
+  const { ok, router, error } = await createRouter(null, log);
+  if (!ok) throw new Error(`Router ${error}`);
+
+  log('Phase 4.1: Checking LivRouter provider node...');
+  const providerNodeId = await router.ensureProviderNode(
+    'LivRouter',
+    'livrouter',
+    'chat',
+    'https://api.livrouter.com/v1',
+    'anthropic-compatible'
+  );
+  log(`LivRouter provider node: ${providerNodeId}`);
+
+  log('Phase 4.2: Registering API key to 9router...');
+  await router.importProvider(
+    providerNodeId,
+    `Account ${userId}`,
+    apiKey,
+    { defaultModel: 'glm-5.2' }
+  );
+
+  log(`✅ LivRouter key for account ${userId} successfully integrated into 9router!`);
+}
+
 async function processLivRouterAccountOnce(
   account,
   browserArgsIndex,
@@ -768,6 +794,14 @@ async function processLivRouterAccountOnce(
       newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
     } catch (affErr) {
       log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
+    }
+
+    updateProgress({ step: 'Registering to 9router' });
+    try {
+      await registerToRouter(userId, apiKey, log);
+    } catch (routerErr) {
+      log(`⚠️  9router registration failed: ${routerErr.message}`);
+      log('Continuing without 9router integration...');
     }
 
     log(`Account harvest successful: ${account.email}`);
