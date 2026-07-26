@@ -787,6 +787,10 @@ async function processLivRouterAccountOnce(
       log('⚠️  UserId not extracted from page, trying API call...');
       const userInfo = await getUserInfo(axiosInstance, browserCookies, null, log);
       userId = userInfo.userId;
+      if (userInfo.affCode) {
+        newAffCode = userInfo.affCode;
+        log(`Affiliate code from user info: ${newAffCode}`);
+      }
     }
 
     updateProgress({ step: STEPS.HARVESTING });
@@ -796,11 +800,16 @@ async function processLivRouterAccountOnce(
     apiKey = await revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log);
     saveApiKey(account.email, userId, apiKey, log);
 
-    updateProgress({ step: 'Harvesting aff code' });
-    try {
-      newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
-    } catch (affErr) {
-      log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
+    // Only fetch affiliate code if we don't have it yet
+    if (!newAffCode) {
+      updateProgress({ step: 'Harvesting aff code' });
+      try {
+        newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
+      } catch (affErr) {
+        log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
+      }
+    } else {
+      log(`✅ Using affiliate code from user info: ${newAffCode}`);
     }
 
     updateProgress({ step: 'Registering to 9router' });
