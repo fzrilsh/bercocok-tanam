@@ -578,6 +578,7 @@ async function processLivRouterAccountOnce(
 ) {
   const config = getConfig();
   let oauthState = null;
+  let stateCookies = null;
   let sessionCookie = null;
   let userId = null;
   let apiKey = null;
@@ -587,6 +588,13 @@ async function processLivRouterAccountOnce(
   const axiosInstance = createAxiosInstance(proxy, log);
 
   try {
+    // Phase 0: Get OAuth state via axios
+    updateProgress({ step: 'Getting OAuth state' });
+    const phase0Result = await harvestOAuthState(axiosInstance, log, affCode);
+    oauthState = phase0Result.state;
+    stateCookies = phase0Result.cookies;
+    log(`Phase 0 complete - State: ${oauthState}, Cookies: ${stateCookies.substring(0, 60)}...`);
+
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
     log(`Launching browser for ${account.email} (GitHub OAuth)`);
 
@@ -594,8 +602,46 @@ async function processLivRouterAccountOnce(
     browser = browserResult.browser;
     const page = browserResult.page;
 
-    // Navigate to LivRouter login page
-    updateProgress({ step: 'Opening login page' });
+    // Enable request interception to catch OAuth callback
+    await page.setRequestInterception(true);
+    
+    let capturedCode = null;
+    let capturedState = null;
+    let callbackDetected = false;
+    
+    const requestHandler = (request) => {
+      const url = request.url();
+      
+      // Regex to validate OAuth callback URL
+      const callbackRegex = /^https:\/\/livrouter\.com\/oauth\/github\?code=([^&]+)(&state=([^&]+))?/;
+      const match = url.match(callbackRegex);
+      
+      if (match && !callbackDetected) {
+        callbackDetected = true;
+        log(`🎯 Intercepted OAuth callback URL: ${url}`);
+        
+        // Extract code and state
+        const urlObj = new URL(url);
+        capturedCode = urlObj.searchParams.get('code');
+        capturedState = urlObj.searchParams.get('state');
+        
+        log(`Captured code: ${capturedCode?.substring(0, 20)}...`);
+        log(`Captured state: ${capturedState}`);
+        
+        // Abort this request to prevent browser from exchanging the code
+        log('Aborting navigation - will exchange via axios instead');
+        request.abort('aborted');
+      } else {
+        // Continue with other requests
+        request.continue();
+      }
+    };
+    
+    page.on('request', requestHandler);
+    log('Request interception enabled - will capture OAuth callback');
+
+    // Phase 1: Navigate to LivRouter login and initiate GitHub OAuth
+    updateProgress({ step: 'Navigating to login' });
     log('Navigating to LivRouter login page...');
     await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle2' });
     log('Login page loaded');
@@ -682,116 +728,51 @@ async function processLivRouterAccountOnce(
       log('No authorization button - assuming already authorized');
       log('Waiting for automatic redirect to callback...');
       
-      try {
-        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
-        log('✅ Automatic redirect to callback completed');
-      } catch (err) {
-        log(`⚠️ No automatic redirect detected: ${err.message}`);
-      }
+      // Don't wait for navigation since we're aborting it
+      await sleep(3000);
     }
     
-    // Wait for callback page to process
-    log('Waiting for callback page to complete OAuth exchange...');
-    await sleep(3000);
-    
-    const finalUrl = page.url();
-    log(`Final URL after OAuth: ${finalUrl}`);
-    
-    // Check for error page
-    if (finalUrl.includes('/error') || finalUrl.includes('mismatch')) {
-      const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
-      log(`❌ OAuth flow ended on error page`);
-      log(`Error page content: ${pageText.substring(0, 300)}`);
-      throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
+    // Wait for callback to be captured
+    log('Waiting for OAuth callback to be intercepted...');
+    let attempts = 0;
+    while (!capturedCode && attempts < 10) {
+      await sleep(1000);
+      attempts++;
     }
     
-    // Navigate to dashboard and wait for networkidle (critical!)
-    log('Navigating to dashboard and waiting for network idle...');
-    await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'networkidle2', timeout: 20000 });
+    // Clean up request handler
+    page.off('request', requestHandler);
+    await page.setRequestInterception(false);
     
-    // Verify we're actually on the dashboard page
-    const currentUrl = page.url();
-    if (!currentUrl.includes('/dashboard')) {
-      throw new Error(`Not on dashboard page! Current URL: ${currentUrl}`);
+    if (!capturedCode || !capturedState) {
+      throw new Error(`Failed to capture OAuth callback - Code: ${capturedCode || 'missing'}, State: ${capturedState || 'missing'}`);
     }
     
-    log('✅ Dashboard loaded (networkidle) at correct URL');
+    log(`✅ OAuth callback captured successfully`);
     
-    // Extract userId from localStorage.livrouter_user
-    log('Extracting userId from localStorage.livrouter_user...');
-    let extractedUserId = null;
-    
-    try {
-      extractedUserId = await page.evaluate(() => {
-        const userStr = localStorage.getItem('livrouter_user');
-        if (userStr) {
-          try {
-            const userData = JSON.parse(userStr);
-            if (userData.id) return parseInt(userData.id);
-          } catch (e) {
-            console.error('Failed to parse livrouter_user:', e);
-          }
-        }
-        return null;
-      });
-      
-      if (extractedUserId) {
-        log(`✅ UserId extracted from localStorage: ${extractedUserId}`);
-      } else {
-        throw new Error('Could not extract userId from localStorage.livrouter_user');
-      }
-    } catch (err) {
-      log(`❌ Error extracting userId: ${err.message}`);
-      throw new Error(`Failed to extract userId from localStorage: ${err.message}`);
-    }
-    
-    // Extract cookies from browser (after networkidle)
-    log('Extracting cookies from browser...');
-    const cookies = await page.cookies();
-    log(`Extracted ${cookies.length} cookie(s) from browser`);
-    const browserCookies = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-    log(`Full browser cookies: ${browserCookies}`);
-
+    // Close browser - we don't need it anymore
     await sleep(config.delays.beforeBrowserClose);
     await browser.close();
     browser = null;
-    log('Browser closed (OAuth complete)');
-
-    updateProgress({ step: 'Getting user info' });
+    log('Browser closed (OAuth capture complete)');
     
-    // Browser already completed OAuth exchange, extract session cookie
-    const sessionMatch = browserCookies.match(/session=([^;]+)/);
-    if (!sessionMatch) {
-      throw new Error('No session cookie found in browser cookies after OAuth');
-    }
-    sessionCookie = sessionMatch[1].trim();
-    log(`Session cookie extracted (first 30): ${sessionCookie.substring(0, 30)}...`);
+    // Phase 2: Exchange code via axios with Phase 0 cookies
+    updateProgress({ step: 'Exchanging OAuth code' });
+    log('Phase 2: Exchanging OAuth code via axios...');
     
-    // Use extracted userId or get it from API
-    if (extractedUserId) {
-      userId = extractedUserId;
-      log(`Using userId from dashboard: ${userId}`);
-      
-      // Optionally verify/get additional user info
-      try {
-        const userInfo = await getUserInfo(axiosInstance, browserCookies, userId, log);
-        if (userInfo.affCode) {
-          newAffCode = userInfo.affCode;
-          log(`Affiliate code from user info: ${newAffCode}`);
-        }
-      } catch (err) {
-        log(`⚠️  Could not fetch additional user info: ${err.message}`);
-      }
-    } else {
-      // Fallback: try to get userId from API (might fail without New-Api-User header)
-      log('⚠️  UserId not extracted from page, trying API call...');
-      const userInfo = await getUserInfo(axiosInstance, browserCookies, null, log);
-      userId = userInfo.userId;
-      if (userInfo.affCode) {
-        newAffCode = userInfo.affCode;
-        log(`Affiliate code from user info: ${newAffCode}`);
-      }
-    }
+    const sessionData = await exchangeOAuthCallback(
+      axiosInstance,
+      capturedCode,
+      capturedState,
+      oauthState,
+      stateCookies,
+      log
+    );
+    
+    sessionCookie = sessionData.sessionCookie;
+    userId = sessionData.userId;
+    
+    log(`✅ OAuth exchange successful - UserId: ${userId}`);
 
     updateProgress({ step: STEPS.HARVESTING });
 
