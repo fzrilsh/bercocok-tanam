@@ -640,35 +640,14 @@ async function processLivRouterAccountOnce(
     page.on('request', requestHandler);
     log('Request interception enabled - will capture OAuth callback');
 
-    // Phase 1: Navigate to LivRouter login and initiate GitHub OAuth
-    updateProgress({ step: 'Navigating to login' });
-    log('Navigating to LivRouter login page...');
-    await page.goto(`${BASE_URL}/login`, { waitUntil: 'networkidle2' });
-    log('Login page loaded');
-    
-    // Click consent checkbox
-    log('Looking for consent checkbox...');
-    const checkboxSelector = '.login-policy-consent input[type="checkbox"]';
-    await page.waitForSelector(checkboxSelector, { timeout: 10000, visible: true });
-    await page.click(checkboxSelector);
-    log('✅ Consent checkbox clicked');
-    
-    await sleep(500);
-    
-    // Click GitHub button
-    log('Looking for GitHub login button...');
-    const githubButtonSelector = '.login-social-button.login-social-github';
-    await page.waitForSelector(githubButtonSelector, { timeout: 10000, visible: true });
-    
-    log('Clicking GitHub button to initiate OAuth...');
-    await Promise.all([
-      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
-      page.click(githubButtonSelector)
-    ]);
-    log('✅ Navigated to GitHub OAuth page');
-
-    // GitHub Login
+    // Phase 1: Navigate directly to GitHub OAuth URL with Phase 0 state
     updateProgress({ step: STEPS.GOOGLE_LOGIN });
+    log('Building GitHub OAuth URL with Phase 0 state...');
+    
+    const githubOAuthUrl = buildGitHubOAuthUrl(oauthState);
+    log(`Navigating directly to GitHub OAuth: ${githubOAuthUrl}`);
+    
+    await page.goto(githubOAuthUrl, { waitUntil: 'networkidle2' });
     log('Filling GitHub login form...');
     
     const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
