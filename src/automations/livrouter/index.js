@@ -676,11 +676,38 @@ async function processLivRouterAccountOnce(
       log('✅ Navigated to dashboard');
     }
     
+    // Set up network interception to capture userId from API responses
+    let userIdFromNetwork = null;
+    
+    const responseHandler = async (response) => {
+      try {
+        const url = response.url();
+        // Check if this is a user-related API endpoint
+        if (url.includes('/api/gateway/user') || url.includes('/user/self') || url.includes('/user/me')) {
+          const contentType = response.headers()['content-type'] || '';
+          if (contentType.includes('application/json')) {
+            const responseData = await response.json().catch(() => null);
+            if (responseData?.data?.id) {
+              userIdFromNetwork = responseData.data.id;
+              log(`🎯 Captured userId from network response (${url}): ${userIdFromNetwork}`);
+            }
+          }
+        }
+      } catch (err) {
+        // Ignore errors from response interception
+      }
+    };
+    
+    page.on('response', responseHandler);
+    
     // Wait for dashboard to fully load (important for extracting userId)
-    log('Waiting for dashboard to fully load...');
-    await sleep(2000);
+    log('Waiting for dashboard to fully load and capture network data...');
+    await sleep(3000); // Longer wait for API calls to complete
     await page.waitForSelector('body', { timeout: 5000 });
     log('✅ Dashboard loaded');
+    
+    // Clean up response handler
+    page.off('response', responseHandler);
     
     // Extract cookies from browser
     const cookies = await page.cookies();
@@ -692,23 +719,28 @@ async function processLivRouterAccountOnce(
     
     // Extract userId from dashboard page before closing browser
     log('Extracting userId from dashboard page...');
-    let extractedUserId = null;
+    let extractedUserId = userIdFromNetwork; // Prioritize network-captured userId
     
-    try {
-      // First, log what's available on the page for debugging
-      const pageDebugInfo = await page.evaluate(() => {
-        return {
-          windowKeys: Object.keys(window).filter(k => k.toLowerCase().includes('user') || k.toLowerCase().includes('id')),
-          localStorage: JSON.stringify(localStorage),
-          sessionStorage: JSON.stringify(sessionStorage),
-          bodyClasses: document.body.className,
-          hasDataAttrs: !!document.querySelector('[data-user-id], [data-id], [data-userid]')
-        };
-      });
-      log(`Page debug info: ${JSON.stringify(pageDebugInfo)}`);
+    if (extractedUserId) {
+      log(`✅ Using userId from network interception: ${extractedUserId}`);
+    } else {
+      log('⚠️  No userId captured from network, trying page extraction...');
       
-      // Try multiple methods to find userId
-      extractedUserId = await page.evaluate(() => {
+      try {
+        // First, log what's available on the page for debugging
+        const pageDebugInfo = await page.evaluate(() => {
+          return {
+            windowKeys: Object.keys(window).filter(k => k.toLowerCase().includes('user') || k.toLowerCase().includes('id')),
+            localStorage: JSON.stringify(localStorage),
+            sessionStorage: JSON.stringify(sessionStorage),
+            bodyClasses: document.body.className,
+            hasDataAttrs: !!document.querySelector('[data-user-id], [data-id], [data-userid]')
+          };
+        });
+        log(`Page debug info: ${JSON.stringify(pageDebugInfo)}`);
+        
+        // Try multiple methods to find userId
+        extractedUserId = await page.evaluate(() => {
         // Method 1: Check for window variables
         if (window.userId) return window.userId;
         if (window.user?.id) return window.user.id;
@@ -796,14 +828,20 @@ async function processLivRouterAccountOnce(
         return null;
       });
       
-      if (extractedUserId) {
-        log(`✅ UserId extracted from page: ${extractedUserId}`);
-      } else {
-        log('⚠️  Could not extract userId from page with any method');
-        log('⚠️  Will try API call without New-Api-User header (likely to fail)');
+        if (extractedUserId) {
+          log(`✅ UserId extracted from page: ${extractedUserId}`);
+        } else {
+          log('⚠️  Could not extract userId from page with any method');
+          log('⚠️  Will try API call without New-Api-User header (likely to fail)');
+        }
+      } catch (err) {
+        log(`⚠️  Error during page extraction: ${err.message}`);
       }
-    } catch (err) {
-      log(`⚠️  Error extracting userId: ${err.message}`);
+    }
+    
+    // Final check
+    if (!extractedUserId) {
+      log('❌ Failed to extract userId from network or page');
     }
 
     await sleep(config.delays.beforeBrowserClose);
