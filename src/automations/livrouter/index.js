@@ -708,7 +708,14 @@ async function processLivRouterAccountOnce(
     // Navigate to dashboard and wait for networkidle (critical!)
     log('Navigating to dashboard and waiting for network idle...');
     await page.goto(`${BASE_URL}/dashboard`, { waitUntil: 'networkidle2', timeout: 20000 });
-    log('✅ Dashboard loaded (networkidle)');
+    
+    // Verify we're actually on the dashboard page
+    const currentUrl = page.url();
+    if (!currentUrl.includes('/dashboard')) {
+      throw new Error(`Not on dashboard page! Current URL: ${currentUrl}`);
+    }
+    
+    log('✅ Dashboard loaded (networkidle) at correct URL');
     
     // Extract userId from localStorage.livrouter_user
     log('Extracting userId from localStorage.livrouter_user...');
