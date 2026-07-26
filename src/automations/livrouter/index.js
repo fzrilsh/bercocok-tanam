@@ -334,7 +334,14 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
   if (userId) {
     headers['new-api-user'] = String(userId);
     log(`Including New-Api-User header: ${userId}`);
+  } else {
+    log('⚠️  No userId provided, making request WITHOUT New-Api-User header');
   }
+  
+  // Log exact request details for debugging
+  log(`Request URL: ${BASE_URL}/api/gateway/user/self`);
+  log(`Cookie header: ${sessionCookie.substring(0, 100)}...`);
+  log(`All headers: ${JSON.stringify(headers, null, 2)}`);
 
   const response = await axiosRequestWithRetry(
     axiosInstance,
@@ -343,6 +350,9 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
     { headers },
     log
   );
+  
+  log(`Response status: ${response.status}`);
+  log(`Response data: ${JSON.stringify(response.data)}`);
 
   if (response.status !== 200) {
     throw new Error(`Failed to get user info: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
@@ -755,10 +765,16 @@ async function processLivRouterAccountOnce(
                         sessionStorage.getItem('userId') || sessionStorage.getItem('user_id');
           if (stored) return parseInt(stored);
           
-          const userStr = localStorage.getItem('user') || sessionStorage.getItem('user');
-          if (userStr) {
-            const userData = JSON.parse(userStr);
-            if (userData.id) return userData.id;
+          // Check for various user data keys
+          const userKeys = ['livrouter_user', 'user', 'userData', 'currentUser'];
+          for (const key of userKeys) {
+            const userStr = localStorage.getItem(key) || sessionStorage.getItem(key);
+            if (userStr) {
+              try {
+                const userData = JSON.parse(userStr);
+                if (userData.id) return parseInt(userData.id);
+              } catch (e) {}
+            }
           }
         } catch (e) {}
         
