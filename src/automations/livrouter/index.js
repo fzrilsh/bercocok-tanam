@@ -290,12 +290,19 @@ async function exchangeOAuthCallback(axiosInstance, code, state, originalState, 
 
   const response = await axiosRequestWithRetry(axiosInstance, 'GET', url, { headers }, log);
 
+  // Debug logging
+  log(`Exchange response status: ${response.status}`);
+  log(`Exchange response headers: ${JSON.stringify(response.headers)}`);
+  log(`Exchange response data: ${JSON.stringify(response.data)}`);
+
   if (response.status !== 200) {
     throw new Error(`OAuth callback failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
   }
 
   const setCookieHeader = response.headers['set-cookie'];
   if (!setCookieHeader) {
+    log(`❌ No set-cookie header found in response!`);
+    log(`Available headers: ${Object.keys(response.headers).join(', ')}`);
     throw new Error('No set-cookie header in OAuth callback response');
   }
 
