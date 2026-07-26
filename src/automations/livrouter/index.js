@@ -813,7 +813,14 @@ async function processLivRouterAccountOnce(
 
     log(`Account harvest successful: ${account.email}`);
   } catch (error) {
-    log(`Error in processLivRouterAccountOnce: ${error.message}`);
+    log(`❌ Error in processLivRouterAccountOnce: ${error.message}`);
+    
+    if (browser) {
+      log(`🔍 Keeping browser open for debugging (60 seconds)...`);
+      await sleep(60000); // Wait 60 seconds for debugging before closing
+      log('Closing browser after debug wait...');
+    }
+    
     throw error;
   } finally {
     if (browser) {
