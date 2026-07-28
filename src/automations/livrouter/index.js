@@ -13,6 +13,24 @@ const BASE_URL = 'https://livrouter.com';
 const GITHUB_CLIENT_ID = 'Ov23lizY0ILAlo5BAEBa';
 const RESULT_FILE = path.join(ROOT_DIR, 'livrouter_keys.txt');
 
+async function logoutSession(axiosInstance, log) {
+  log('Pre-flight: Logging out to ensure clean session...');
+
+  const url = `${BASE_URL}/api/gateway/user/logout`;
+
+  try {
+    const response = await axiosRequestWithRetry(axiosInstance, 'GET', url, {}, log);
+
+    if (response.status === 200) {
+      log('✅ Logout successful - session cleaned');
+    } else {
+      log(`⚠️ Logout returned ${response.status} (continuing anyway)`);
+    }
+  } catch (err) {
+    log(`⚠️ Logout failed: ${err.message} (continuing anyway)`);
+  }
+}
+
 function buildStealthHeaders() {
   return {
     'accept': 'application/json',
@@ -47,7 +65,7 @@ function createAxiosInstance(proxy, log) {
       config.httpsAgent = httpsAgent;
       config.proxy = false;
 
-      const proxyDisplay = proxyUrl.includes('@') 
+      const proxyDisplay = proxyUrl.includes('@')
         ? proxyUrl.split('@')[1].replace(/^https?:\/\//, '')
         : proxyUrl.replace(/^https?:\/\//, '');
 
@@ -146,13 +164,13 @@ function buildGitHubOAuthUrl(oauthState) {
     state: oauthState,
     new_signup: 'true'
   });
-  
+
   const returnTo = `/login/oauth/authorize?${oauthParams.toString()}`;
   const loginParams = new URLSearchParams({
     client_id: GITHUB_CLIENT_ID,
     return_to: returnTo
   });
-  
+
   return `https://github.com/login?${loginParams.toString()}`;
 }
 
@@ -164,12 +182,16 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
 
   log('Filling GitHub login form...');
   const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
-  await emailInput.click({ clickCount: 3 });
-  await page.keyboard.type(account.email, { delay: 50 });
+  await emailInput.click();
+  await sleep(300);
+  await emailInput.evaluate(el => el.value = '');
+  await emailInput.type(account.email, { delay: 80 });
 
   const passwordInput = await page.waitForSelector('input#password', { timeout: 5000, visible: true });
-  await passwordInput.click({ clickCount: 3 });
-  await page.keyboard.type(account.password, { delay: 50 });
+  await passwordInput.click();
+  await sleep(300);
+  await passwordInput.evaluate(el => el.value = '');
+  await passwordInput.type(account.password, { delay: 80 });
 
   await sleep(500);
   log('Submitting login form...');
@@ -183,18 +205,18 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
   }
 
   log('Waiting for authorization page...');
-  
+
   // Try to find authorization button (OPTIONAL - might already be authorized)
   log('Checking for Authorize button...');
-  const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', { 
-    timeout: 15000, 
-    visible: true 
+  const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', {
+    timeout: 15000,
+    visible: true
   }).then(() => true).catch(() => false);
-  
+
   if (buttonFound) {
     log('Authorization button found, clicking and waiting for OAuth callback...');
     await sleep(2000);
-    
+
     // Click and wait for navigation to callback URL (browser will load callback page)
     try {
       await Promise.all([
@@ -204,7 +226,7 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
       log('✅ Authorization completed, navigated to callback');
     } catch (err) {
       log(`Click with navigation failed: ${err.message}, trying JavaScript click...`);
-      
+
       // Try JavaScript click as fallback
       try {
         await Promise.all([
@@ -223,7 +245,7 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
   } else {
     log('No authorization button found - assuming already authorized');
     log('Waiting for automatic redirect to callback...');
-    
+
     // Wait for navigation to callback (should happen automatically if already authorized)
     try {
       await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 });
@@ -232,15 +254,15 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
       log(`⚠️  No automatic redirect detected: ${err.message}`);
     }
   }
-  
+
   // At this point, browser should have loaded the callback page
   // Wait for page to fully process the OAuth exchange
   log('Waiting for callback page to complete OAuth exchange...');
   await sleep(3000);
-  
+
   const finalUrl = page.url();
   log(`Final URL after OAuth: ${finalUrl}`);
-  
+
   // Check if we ended up on an error page
   if (finalUrl.includes('/error') || finalUrl.includes('mismatch')) {
     const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
@@ -248,18 +270,18 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
     log(`Error page content: ${pageText.substring(0, 300)}`);
     throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
   }
-  
+
   // Extract all cookies from browser (includes new session cookie from OAuth)
   const cookies = await page.cookies();
   log(`Extracted ${cookies.length} cookie(s) from browser after OAuth`);
-  
+
   // Convert cookies to cookie string for axios
   const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-  
+
   if (!cookieString) {
     throw new Error('No cookies found in browser after OAuth flow');
   }
-  
+
   log('✅ GitHub OAuth flow completed successfully!');
   log(`Session cookies: ${cookieString.substring(0, 60)}...`);
   return { cookies: cookieString };
@@ -345,7 +367,7 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
     'cache-control': 'no-cache',
     'pragma': 'no-cache'
   };
-  
+
   // Add New-Api-User header if userId is provided
   if (userId) {
     headers['new-api-user'] = String(userId);
@@ -353,7 +375,7 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
   } else {
     log('⚠️  No userId provided, making request WITHOUT New-Api-User header');
   }
-  
+
   // Log exact request details for debugging
   log(`Request URL: ${BASE_URL}/api/gateway/user/self`);
   log(`Cookie header: ${sessionCookie.substring(0, 100)}...`);
@@ -366,7 +388,7 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
     { headers },
     log
   );
-  
+
   log(`Response status: ${response.status}`);
   log(`Response data: ${JSON.stringify(response.data)}`);
 
@@ -382,7 +404,7 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
 
   const returnedUserId = data.data.id;
   const affCode = data.data.aff_code || null;
-  
+
   log(`User ID from API: ${returnedUserId}`);
   if (affCode) {
     log(`Affiliate code: ${affCode}`);
@@ -391,17 +413,21 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
   return { userId: returnedUserId, affCode };
 }
 
-function buildAuthHeaders(sessionCookie, userId) {
+function buildAuthHeaders(accessToken, sessionId, userId) {
   return {
-    'cookie': `session=${sessionCookie}`,
+    'authorization': `Bearer ${accessToken}`,
+    'x-auth-session': sessionId,
     'new-api-user': String(userId),
     'origin': BASE_URL,
     'referer': `${BASE_URL}/api-keys`,
-    'content-type': 'application/json'
+    'content-type': 'application/json',
+    'accept': '*/*',
+    'cache-control': 'no-cache',
+    'pragma': 'no-cache'
   };
 }
 
-async function createToken(axiosInstance, sessionCookie, userId, log) {
+async function createToken(axiosInstance, accessToken, sessionId, userId, log) {
   log('Phase 3.1: Creating new token entry...');
 
   const randomName = `api_${Date.now()}`;
@@ -423,7 +449,7 @@ async function createToken(axiosInstance, sessionCookie, userId, log) {
     'POST',
     `${BASE_URL}/api/gateway/token/`,
     {
-      headers: buildAuthHeaders(sessionCookie, userId),
+      headers: buildAuthHeaders(accessToken, sessionId, userId),
       data: payload
     },
     log
@@ -442,10 +468,10 @@ async function createToken(axiosInstance, sessionCookie, userId, log) {
   log('Token created successfully (fetching ID...)');
 }
 
-async function getTokenId(axiosInstance, sessionCookie, userId, log) {
+async function getTokenId(axiosInstance, accessToken, sessionId, userId, log) {
   log('Phase 3.2: Fetching token list to get token ID...');
 
-  const headers = buildAuthHeaders(sessionCookie, userId);
+  const headers = buildAuthHeaders(accessToken, sessionId, userId);
 
   const response = await axiosRequestWithRetry(
     axiosInstance,
@@ -471,10 +497,10 @@ async function getTokenId(axiosInstance, sessionCookie, userId, log) {
   return tokenId;
 }
 
-async function revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log) {
+async function revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log) {
   log('Phase 3.3: Revealing API key...');
 
-  const headers = buildAuthHeaders(sessionCookie, userId);
+  const headers = buildAuthHeaders(accessToken, sessionId, userId);
   headers['content-length'] = '0';
 
   const response = await axiosRequestWithRetry(
@@ -517,43 +543,99 @@ function saveApiKey(email, userId, apiKey, log) {
   log(`API key saved to ${RESULT_FILE}`);
 }
 
-async function getAffiliateCode(axiosInstance, sessionCookie, userId, log) {
-  log('Fetching affiliate code...');
+async function refreshAccessToken(axiosInstance, sessionId, log) {
+  log('Refreshing access token...');
 
   const headers = {
     'accept': '*/*',
-    'cookie': `session=${sessionCookie}`,
-    'new-api-user': String(userId),
-    'referer': `${BASE_URL}/dashboard`,
-    'content-type': 'application/json',
+    'accept-language': 'en-US,en;q=0.6',
     'cache-control': 'no-cache',
-    'pragma': 'no-cache'
+    'content-type': 'application/json',
+    'pragma': 'no-cache',
+    'priority': 'u=1, i',
+    'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+    'sec-ch-ua-mobile': '?0',
+    'sec-ch-ua-platform': '"macOS"',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'sec-gpc': '1',
+    'x-auth-session': sessionId,
+    'referer': `${BASE_URL}/dashboard/keys`
   };
 
   const response = await axiosRequestWithRetry(
     axiosInstance,
-    'GET',
-    `${BASE_URL}/api/gateway/user/self`,
+    'POST',
+    `${BASE_URL}/api/gateway/user/auth/refresh`,
     { headers },
     log
   );
 
   if (response.status !== 200) {
-    log(`Failed to fetch affiliate code: HTTP ${response.status}`);
-    return null;
+    throw new Error(`Token refresh failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
   }
 
   const data = response.data;
 
-  if (!data.success || !data.data?.aff_code) {
-    log(`No affiliate code found in response: ${JSON.stringify(data)}`);
-    return null;
+  if (!data.success || !data.data?.access_token) {
+    throw new Error(`Token refresh failed: ${JSON.stringify(data)}`);
   }
 
-  const affCode = data.data.aff_code;
-  log(`Affiliate code harvested: ${affCode}`);
+  const newAccessToken = data.data.access_token;
+  const newExpiresAt = data.data.access_expires_at;
 
-  return affCode;
+  log(`✅ Access token refreshed, expires at: ${newExpiresAt}`);
+
+  return {
+    accessToken: newAccessToken,
+    accessExpiresAt: newExpiresAt
+  };
+}
+
+async function transferAffiliateReward(axiosInstance, accessToken, sessionId, userId, quota, log) {
+  log(`Transferring affiliate reward (quota: ${quota})...`);
+
+  const headers = {
+    'accept': '*/*',
+    'accept-language': 'en-US,en;q=0.6',
+    'authorization': `Bearer ${accessToken}`,
+    'x-auth-session': sessionId,
+    'new-api-user': String(userId),
+    'cache-control': 'no-cache',
+    'content-type': 'application/json',
+    'pragma': 'no-cache',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'referer': `${BASE_URL}/dashboard/profile`
+  };
+
+  const payload = { quota };
+
+  const response = await axiosRequestWithRetry(
+    axiosInstance,
+    'POST',
+    `${BASE_URL}/api/gateway/user/aff_transfer`,
+    {
+      headers,
+      data: payload
+    },
+    log
+  );
+
+  if (response.status !== 200) {
+    throw new Error(`Affiliate transfer failed: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
+  }
+
+  const data = response.data;
+
+  if (!data.success) {
+    throw new Error(`Affiliate transfer failed: ${JSON.stringify(data)}`);
+  }
+
+  log(`✅ Affiliate reward transferred: ${quota} quota`);
+  return true;
 }
 
 async function registerToRouter(userId, apiKey, log) {
@@ -589,89 +671,93 @@ async function processLivRouterAccountOnce(
   updateProgress,
   proxy,
   poolProxy,
-  affCode = null
+  previousUserCredentials = null
 ) {
   const config = getConfig();
   let oauthState = null;
   let stateCookies = null;
-  let sessionCookie = null;
+  let accessToken = null;
+  let sessionId = null;
   let userId = null;
   let apiKey = null;
   let browser = null;
   let newAffCode = null;
 
   const axiosInstance = createAxiosInstance(proxy, log);
+  const affCode = previousUserCredentials?.affCode || null;
 
   try {
-    // Phase 0: Get OAuth state via axios
-    updateProgress({ step: 'Getting OAuth state' });
-    const phase0Result = await harvestOAuthState(axiosInstance, log, affCode);
-    oauthState = phase0Result.state;
-    stateCookies = phase0Result.cookies;
-    log(`Phase 0 complete - State: ${oauthState}, Cookies: ${stateCookies.substring(0, 60)}...`);
+    await logoutSession(axiosInstance, log);
 
     updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser for ${account.email} (GitHub OAuth)`);
+    log(`Launching browser for ${account.email}`);
 
     const browserResult = await launchBrowser(browserArgsIndex, workerIndex, null);
     browser = browserResult.browser;
     const page = browserResult.page;
 
-    // Enable request interception to catch OAuth callback
-    await page.setRequestInterception(true);
-    
-    let capturedCode = null;
-    let capturedState = null;
-    let callbackDetected = false;
-    
-    const requestHandler = (request) => {
-      const url = request.url();
-      
-      // Regex to validate OAuth callback URL
-      const callbackRegex = /^https:\/\/livrouter\.com\/oauth\/github\?code=([^&]+)(&state=([^&]+))?/;
-      const match = url.match(callbackRegex);
-      
-      if (match && !callbackDetected) {
-        callbackDetected = true;
-        log(`🎯 Intercepted OAuth callback URL: ${url}`);
-        
-        // Extract code and state
-        const urlObj = new URL(url);
-        capturedCode = urlObj.searchParams.get('code');
-        capturedState = urlObj.searchParams.get('state');
-        
-        log(`Captured code: ${capturedCode?.substring(0, 20)}...`);
-        log(`Captured state: ${capturedState}`);
-        
-        // Abort this request to prevent browser from exchanging the code
-        log('Aborting navigation - will exchange via axios instead');
-        request.abort('aborted');
-      } else {
-        // Continue with other requests
-        request.continue();
-      }
-    };
-    
-    page.on('request', requestHandler);
-    log('Request interception enabled - will capture OAuth callback');
+    log('Browser will handle OAuth flow completely (no manual state request)...');
 
-    // Phase 1: Navigate directly to GitHub OAuth URL with Phase 0 state
     updateProgress({ step: STEPS.GOOGLE_LOGIN });
-    log('Building GitHub OAuth URL with Phase 0 state...');
-    
-    const githubOAuthUrl = buildGitHubOAuthUrl(oauthState);
-    log(`Navigating directly to GitHub OAuth: ${githubOAuthUrl}`);
-    
-    await page.goto(githubOAuthUrl, { waitUntil: 'networkidle2' });
+
+    let loginUrl = `${BASE_URL}/login`;
+    if (affCode) {
+      loginUrl += `?aff=${affCode}`;
+      log(`Navigating to /login with affiliate code: ${affCode}`);
+    } else {
+      log('Navigating to /login...');
+    }
+
+    await page.goto(loginUrl, { waitUntil: 'networkidle2' });
+    await sleep(1000);
+
+    log('Checking consent checkbox...');
+    const consentCheckbox = await page.$('.login-reference-consent input[type="checkbox"], .login-policy-consent input[type="checkbox"]');
+    if (consentCheckbox) {
+      await consentCheckbox.click();
+      log('✅ Consent checkbox checked');
+      await sleep(500);
+    } else {
+      log('⚠️ Consent checkbox not found (might not be required)');
+    }
+
+    log('Looking for GitHub login button...');
+    const githubButtonSelector = 'button, a, [role="button"]';
+    const githubButton = await page.evaluateHandle(() => {
+      const elements = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
+      return elements.find(el => {
+        const text = el.textContent?.toLowerCase() || '';
+        const href = el.getAttribute('href') || '';
+        return text.includes('github') || href.includes('github');
+      });
+    });
+
+    if (!githubButton || !githubButton.asElement()) {
+      throw new Error('GitHub login button not found on /login page');
+    }
+
+    log('Clicking GitHub login button (/login will generate correct state)...');
+    await Promise.all([
+      page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+      githubButton.asElement().click()
+    ]);
+
+    log('Redirected to GitHub OAuth with /login-generated state');
     log('Filling GitHub login form...');
-    
+
     const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
-    await emailInput.click({ clickCount: 3 });
-    await page.keyboard.type(account.email, { delay: 50 });
+    await emailInput.click();
+    await sleep(300);
+    await emailInput.evaluate(el => el.value = '');
+    await emailInput.type(account.email, { delay: 80 });
+    log(`Email filled: ${account.email}`);
 
     const passwordInput = await page.waitForSelector('input#password', { timeout: 5000, visible: true });
-    await passwordInput.click({ clickCount: 3 });
-    await page.keyboard.type(account.password, { delay: 50 });
+    await passwordInput.click();
+    await sleep(300);
+    await passwordInput.evaluate(el => el.value = '');
+    await passwordInput.type(account.password, { delay: 80 });
+    log('Password filled');
 
     await sleep(500);
     log('Submitting GitHub login form...');
@@ -684,17 +770,16 @@ async function processLivRouterAccountOnce(
       log('Navigation wait timeout (continuing anyway)');
     }
 
-    // Check for authorization page
     log('Checking for authorization page...');
-    const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', { 
-      timeout: 15000, 
-      visible: true 
+    const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', {
+      timeout: 15000,
+      visible: true
     }).then(() => true).catch(() => false);
-    
+
     if (buttonFound) {
       log('Authorization button found, clicking...');
       await sleep(2000);
-      
+
       try {
         await Promise.all([
           page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
@@ -702,8 +787,9 @@ async function processLivRouterAccountOnce(
         ]);
         log('✅ Authorization completed, navigated to callback');
       } catch (err) {
-        log(`Click failed: ${err.message}, trying JavaScript click...`);
-        
+        log(`Click with navigation failed: ${err.message}, trying JavaScript click...`);
+
+        // Try JavaScript click as fallback
         try {
           await Promise.all([
             page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
@@ -714,78 +800,92 @@ async function processLivRouterAccountOnce(
           ]);
           log('✅ Authorization completed via JavaScript click');
         } catch (err2) {
-          log(`⚠️ All click methods failed: ${err2.message}`);
+          log(`⚠️  All click methods failed: ${err2.message}`);
           throw new Error('Failed to complete authorization');
         }
       }
     } else {
       log('No authorization button - assuming already authorized');
-      log('Waiting for automatic redirect to callback...');
-      
-      // Don't wait for navigation since we're aborting it
+      log('Waiting for automatic redirect...');
       await sleep(3000);
     }
-    
-    // Wait for callback to be captured
-    log('Waiting for OAuth callback to be intercepted...');
-    let attempts = 0;
-    while (!capturedCode && attempts < 10) {
-      await sleep(1000);
-      attempts++;
+
+    log('Waiting for OAuth callback exchange to complete...');
+    await sleep(2000);
+
+    log('Waiting for redirect to dashboard with networkidle...');
+    try {
+      await page.waitForFunction(
+        () => window.location.href.includes('/dashboard'),
+        { timeout: 30000 }
+      );
+      log('✅ Dashboard URL detected');
+
+      await sleep(2000);
+      log('✅ Dashboard fully loaded');
+    } catch (err) {
+      log(`⚠️ Dashboard wait timeout: ${err.message}`);
     }
-    
-    // Clean up request handler
-    page.off('request', requestHandler);
-    await page.setRequestInterception(false);
-    
-    if (!capturedCode || !capturedState) {
-      throw new Error(`Failed to capture OAuth callback - Code: ${capturedCode || 'missing'}, State: ${capturedState || 'missing'}`);
+
+    const finalUrl = page.url();
+    log(`Final URL: ${finalUrl}`);
+
+    log('Extracting user info from localStorage...');
+    const userDataStr = await page.evaluate(() => localStorage.getItem('livrouter_user')).catch(() => null);
+
+    if (!userDataStr) {
+      throw new Error('No livrouter_user found in localStorage');
     }
-    
-    log(`✅ OAuth callback captured successfully`);
-    
-    // Close browser - we don't need it anymore
+
+    const userData = JSON.parse(userDataStr);
+    userId = userData.id;
+    const username = userData.username;
+    accessToken = userData.accessToken;
+    sessionId = userData.sessionId;
+    newAffCode = userData.affCode;
+
+    log(`User ID: ${userId}`);
+    log(`Username: ${username}`);
+    log(`Access token: ${accessToken.substring(0, 30)}...`);
+    log(`Session ID: ${sessionId}`);
+    log(`Affiliate code: ${newAffCode}`);
+
     await sleep(config.delays.beforeBrowserClose);
     await browser.close();
     browser = null;
-    log('Browser closed (OAuth capture complete)');
-    
-    // Phase 2: Exchange code via axios with Phase 0 cookies
-    updateProgress({ step: 'Exchanging OAuth code' });
-    log('Phase 2: Exchanging OAuth code via axios...');
-    
-    const sessionData = await exchangeOAuthCallback(
-      axiosInstance,
-      capturedCode,
-      capturedState,
-      oauthState,
-      stateCookies,
-      log
-    );
-    
-    sessionCookie = sessionData.sessionCookie;
-    userId = sessionData.userId;
-    
-    log(`✅ OAuth exchange successful - UserId: ${userId}`);
+    log('Browser closed (credentials extracted from localStorage)');
+
+    if (previousUserCredentials && affCode) {
+      updateProgress({ step: 'Transferring affiliate reward' });
+      try {
+        log('Refreshing previous user token before transfer...');
+        // const refreshed = await refreshAccessToken(
+        //   axiosInstance,
+        //   previousUserCredentials.sessionId,
+        //   log
+        // );
+        // previousUserCredentials.accessToken = refreshed.accessToken;
+
+        log(`Transferring affiliate reward to previous user (ID: ${previousUserCredentials.userId})...`);
+        await transferAffiliateReward(
+          axiosInstance,
+          previousUserCredentials.accessToken,
+          previousUserCredentials.sessionId,
+          previousUserCredentials.userId,
+          1500000,
+          log
+        );
+      } catch (affTransferErr) {
+        log(`⚠️ Affiliate transfer failed: ${affTransferErr.message}`);
+      }
+    }
 
     updateProgress({ step: STEPS.HARVESTING });
 
-    await createToken(axiosInstance, sessionCookie, userId, log);
-    const tokenId = await getTokenId(axiosInstance, sessionCookie, userId, log);
-    apiKey = await revealApiKey(axiosInstance, tokenId, sessionCookie, userId, log);
+    await createToken(axiosInstance, accessToken, sessionId, userId, log);
+    const tokenId = await getTokenId(axiosInstance, accessToken, sessionId, userId, log);
+    apiKey = await revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log);
     saveApiKey(account.email, userId, apiKey, log);
-
-    // Only fetch affiliate code if we don't have it yet
-    if (!newAffCode) {
-      updateProgress({ step: 'Harvesting aff code' });
-      try {
-        newAffCode = await getAffiliateCode(axiosInstance, sessionCookie, userId, log);
-      } catch (affErr) {
-        log(`Affiliate code harvest failed (continuing): ${affErr.message}`);
-      }
-    } else {
-      log(`✅ Using affiliate code from user info: ${newAffCode}`);
-    }
 
     updateProgress({ step: 'Registering to 9router' });
     try {
@@ -798,21 +898,26 @@ async function processLivRouterAccountOnce(
     log(`Account harvest successful: ${account.email}`);
   } catch (error) {
     log(`❌ Error in processLivRouterAccountOnce: ${error.message}`);
-    
+
     if (browser) {
       log(`🔍 Keeping browser open for debugging (60 seconds)...`);
-      await sleep(60000); // Wait 60 seconds for debugging before closing
+      await sleep(60000);
       log('Closing browser after debug wait...');
     }
-    
+
     throw error;
   } finally {
     if (browser) {
-      await browser.close().catch(() => {});
+      await browser.close().catch(() => { });
     }
   }
 
-  return newAffCode;
+  return {
+    userId,
+    accessToken,
+    sessionId,
+    affCode: newAffCode
+  };
 }
 
 async function processLivRouterAccount(
@@ -822,7 +927,7 @@ async function processLivRouterAccount(
   log,
   updateProgress,
   useProxy = true,
-  affCode = null
+  previousUserCredentials = null
 ) {
   const config = getConfig();
   let poolProxy = null;
@@ -834,7 +939,7 @@ async function processLivRouterAccount(
   }
 
   try {
-    const newAffCode = await processLivRouterAccountOnce(
+    const userCredentials = await processLivRouterAccountOnce(
       account,
       browserArgsIndex,
       workerIndex,
@@ -842,7 +947,7 @@ async function processLivRouterAccount(
       updateProgress,
       proxy,
       poolProxy,
-      affCode
+      previousUserCredentials
     );
 
     if (poolProxy) {
@@ -850,7 +955,7 @@ async function processLivRouterAccount(
       log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
     }
 
-    return newAffCode;
+    return userCredentials;
 
   } catch (error) {
     if (poolProxy) {
@@ -876,7 +981,7 @@ async function runLivRouterWorker(
   let successCount = 0;
   let failedCount = 0;
   let processedCount = 0;
-  let lastAffiliateCode = null;
+  let previousUserCredentials = null;
 
   const accountStats = [];
 
@@ -896,19 +1001,19 @@ async function runLivRouterWorker(
     let accountError = null;
 
     try {
-      const newAffCode = await processLivRouterAccount(
+      const userCredentials = await processLivRouterAccount(
         account,
         browserArgsIndex,
         workerIndex,
         log,
         updateProgress,
         useProxy,
-        lastAffiliateCode
+        previousUserCredentials
       );
 
-      if (newAffCode) {
-        lastAffiliateCode = newAffCode;
-        log(`Affiliate code updated for next account: ${newAffCode}`);
+      if (userCredentials && userCredentials.affCode) {
+        previousUserCredentials = userCredentials;
+        log(`Credentials stored for affiliate chaining: ${userCredentials.affCode}`);
       }
 
       accountSuccess = true;
@@ -1030,9 +1135,9 @@ async function runLivRouterAutomation(sharedProgress = null, useProxy = true, op
   }
 
   const startedAt = Date.now();
-  const chunks = accounts.length > config.browserCount 
-    ? Array.from({ length: config.browserCount }, (_, i) => 
-        accounts.filter((_, idx) => idx % config.browserCount === i))
+  const chunks = accounts.length > config.browserCount
+    ? Array.from({ length: config.browserCount }, (_, i) =>
+      accounts.filter((_, idx) => idx % config.browserCount === i))
     : [accounts];
 
   const progress = sharedProgress || createProgressManager(
@@ -1119,7 +1224,7 @@ async function runLivRouterCreateAndImport(
   let successCount = 0;
   let failedCount = 0;
   let processedCount = 0;
-  let lastAffiliateCode = null;
+  let previousUserCredentials = null;
   const accountStats = [];
 
   for (let i = 0; i < createCount; i++) {
@@ -1174,19 +1279,19 @@ async function runLivRouterCreateAndImport(
         email: `LivRouter login: ${account.email}`
       });
 
-      const newAffCode = await processLivRouterAccount(
+      const userCredentials = await processLivRouterAccount(
         account,
         i % config.browserArgsSets.length,
         0,
         logger.log,
         updateProgress,
         useProxy,
-        lastAffiliateCode
+        previousUserCredentials
       );
 
-      if (newAffCode) {
-        lastAffiliateCode = newAffCode;
-        logger.log(`[Pipeline] Affiliate code updated: ${newAffCode}`);
+      if (userCredentials && userCredentials.affCode) {
+        previousUserCredentials = userCredentials;
+        logger.log(`[Pipeline] Credentials stored for affiliate chaining: ${userCredentials.affCode}`);
       }
 
       accountSuccess = true;

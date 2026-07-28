@@ -654,6 +654,13 @@ chrome.webRequest.onAuthRequired.addListener(
         else:
             print("  ├─ Headed mode (browser visible)")
         
+        # Use isolated user data directory to avoid conflicts between runs
+        import uuid
+        user_data_dir = tempfile.mkdtemp(prefix='chrome_profile_')
+        options.add_argument(f'--user-data-dir={user_data_dir}')
+        self.user_data_dir = user_data_dir
+        print(f"  ├─ Using isolated Chrome profile: {user_data_dir}")
+        
         # Detect Chrome version
         chrome_version = None
         if self.chrome_binary:
@@ -694,6 +701,21 @@ chrome.webRequest.onAuthRequired.addListener(
         
         print("  ├─ Setting page load timeout to 60s...")
         self.driver.set_page_load_timeout(60)
+        
+        print("  ├─ Ensuring browser is fully ready...")
+        try:
+            # Navigate to blank page to ensure browser is responsive
+            self.driver.get('data:text/html,<html><body>Browser Ready</body></html>')
+            # Wait for page to be fully loaded
+            WebDriverWait(self.driver, 10).until(
+                lambda d: d.execute_script('return document.readyState') == 'complete'
+            )
+            # Additional small wait for browser stability
+            time.sleep(2)
+            print("  ├─ ✅ Browser is responsive and ready")
+        except Exception as e:
+            print(f"  ├─ ⚠️  Browser readiness check failed: {e}")
+            # Continue anyway, might still work
         
         print("  └─ ✅ Browser launched successfully!")
         return self
@@ -975,9 +997,6 @@ chrome.webRequest.onAuthRequired.addListener(
             print("Continue button not found or already auto-submitted")
         
         print("Waiting for redirect to dashboard...")
-        self.sleep(2)
-        self.wait_for_github_challenge(60)
-        
         WebDriverWait(self.driver, 60).until(
             lambda driver: '/login' in driver.current_url or '/dashboard' in driver.current_url
         )
@@ -986,8 +1005,47 @@ chrome.webRequest.onAuthRequired.addListener(
     
     def close(self):
         if self.driver:
-            self.driver.quit()
-            print("Browser closed.")
+            try:
+                self.driver.quit()
+                print("Browser closed.")
+            except Exception as e:
+                print(f"⚠️  Error during driver.quit(): {e}")
+            
+            # Aggressive cleanup: ensure Chrome processes are killed
+            try:
+                import subprocess
+                import platform
+                
+                # Wait a bit for graceful shutdown
+                time.sleep(1)
+                
+                # Force kill any remaining Chrome processes
+                if platform.system() == 'Darwin':  # macOS
+                    # Kill Chrome processes
+                    subprocess.run(['pkill', '-9', 'Google Chrome'], stderr=subprocess.DEVNULL)
+                    subprocess.run(['pkill', '-9', 'chromedriver'], stderr=subprocess.DEVNULL)
+                elif platform.system() == 'Linux':
+                    subprocess.run(['pkill', '-9', 'chrome'], stderr=subprocess.DEVNULL)
+                    subprocess.run(['pkill', '-9', 'chromedriver'], stderr=subprocess.DEVNULL)
+                
+                print("✅ Chrome processes cleaned up")
+                
+                # Additional wait to ensure cleanup
+                time.sleep(2)
+                
+            except Exception as e:
+                print(f"⚠️  Process cleanup warning: {e}")
+            
+            self.driver = None
+        
+        # Clean up temp user data directory
+        if hasattr(self, 'user_data_dir') and self.user_data_dir and os.path.exists(self.user_data_dir):
+            try:
+                import shutil
+                shutil.rmtree(self.user_data_dir, ignore_errors=True)
+                print(f"✅ Cleaned up temp profile: {self.user_data_dir}")
+            except Exception as e:
+                print(f"⚠️  Temp directory cleanup warning: {e}")
         
         # Stop local proxy server if running
         if self.local_proxy_server:
