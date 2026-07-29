@@ -16,7 +16,7 @@ const {
     releaseProxy,
 } = require("../../utils");
 const { launchBrowser, setupConditionalProxyInterception } = require("../../browser");
-const { clickSelector } = require("../../providers/google/login");
+const { clickSelector } = require("../../browser/helpers");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
 const { waitForGitHubDeviceOTP } = require("../../providers/email");
@@ -1049,125 +1049,18 @@ async function runCodebuddyWorker(
     log,
     useProxy = true,
 ) {
-    const config = getConfig();
-
-    let successCount = 0;
-    let failedCount = 0;
-    let processedCount = 0;
-
-    const accountStats = [];
-    const queue = [...workerAccounts];
-
-    while (queue.length > 0) {
-        const account = queue[0];
-        let hasLock = false;
-
-        if (queue.length > 1) {
-            if (!tryAcquireAccountLock(account.email)) {
-                log(`[${workerId}] ${account.email} is locked, moving to back of queue.`);
-                queue.push(queue.shift());
-                await sleep(QUEUE_RETRY_DELAY_MS);
-                continue;
-            }
-            hasLock = true;
-        }
-
-        const updateProgress = (payload) => {
-            progress.updateWorker(workerId, {
-                ...payload,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        };
-
-        const startTime = Date.now();
-        let accountSuccess = false;
-        let accountError = null;
-
-        try {
-            if (!hasLock) {
-                await acquireAccountLock(account.email, log, updateProgress);
-                hasLock = true;
-            }
-
-            queue.shift();
-
-            await processCodebuddyAccount(
-                account,
-                browserArgsIndex,
-                workerIndex,
-                log,
-                updateProgress,
-                useProxy,
-            );
-
-            accountSuccess = true;
-            successCount += 1;
-            processedCount += 1;
-
-            progress.updateWorker(workerId, {
-                step: STEPS.DONE,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        } catch (error) {
-            accountSuccess = false;
-            accountError = error.message;
-            failedCount += 1;
-            processedCount += 1;
-
-            appendErrorAccount(account, error.message, "Codebuddy");
-            browserArgsIndex = (browserArgsIndex + 1) % config.browserArgsSets.length;
-
-            log(`[${workerId}] Error: ${error.message}`);
-
-            progress.updateWorker(workerId, {
-                step: STEPS.ERROR,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        } finally {
-            const duration = Date.now() - startTime;
-
-            accountStats.push({
-                email: account.email,
-                rawLine: account.rawLine,
-                success: accountSuccess,
-                duration,
-                error: accountError,
-            });
-
-            if (hasLock) {
-                releaseAccountLock(account.email);
-            }
-        }
-
-        if (queue.length > 0) {
-            progress.updateWorker(workerId, { step: STEPS.WAITING });
-            await sleep(config.delays.betweenAccounts);
-        }
-    }
-
-    progress.updateWorker(workerId, {
-        step: STEPS.DONE,
-        email: "Done",
-        success: successCount,
-        failed: failedCount,
-        current: workerAccounts.length,
-    });
-
-    return {
-        successCount,
-        failedCount,
-        accounts: accountStats,
-        label: `Codebuddy W${workerIndex + 1}`,
-    };
+    const CodebuddyWorker = require("./CodebuddyWorker");
+    const worker = new CodebuddyWorker(
+        workerAccounts,
+        workerId,
+        browserArgsIndex,
+        workerIndex,
+        total,
+        progress,
+        log,
+        useProxy,
+    );
+    return await worker.run();
 }
 
 async function runCodebuddyAutomation(sharedProgress = null, useProxy = true) {
@@ -1438,4 +1331,12 @@ module.exports = {
     runCodebuddyAutomation,
     runCodebuddyCreateAndImport,
     processCodebuddyAccount,
+    readCodebuddyAccounts,
+    removeCodebuddyAccount,
+    getCodebuddyDeviceCode,
+    pollCodebuddyCompletion,
+    handleCodebuddyGitHubButton,
+    handleGitHubLogin,
+    handleGitHubAuthorize,
+    handleRegionSelectionAndWaitForSuccess,
 };

@@ -1,30 +1,18 @@
-const fs = require("fs");
-const { getConfig, getResultFile, SHARED_SELECTORS } = require("../../config");
+const { getConfig, SHARED_SELECTORS } = require("../../config");
 const {
     sleep,
     readAccounts,
-    removeAccount,
-    appendErrorAccount,
     chunkAccounts,
     createFileLogger,
     formatDuration,
-    acquireAccountLock,
-    releaseAccountLock,
-    tryAcquireAccountLock,
-    ensureFileExists,
-    acquireProxy,
-    releaseProxy,
 } = require("../../utils");
-const { launchBrowser } = require("../../browser");
-const {
-    clickSelector,
-    clickFirstVisibleSelector,
-} = require("../../providers/google/login");
+const { clickSelector, clickFirstVisibleSelector } = require("../../browser/helpers");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
+const ProxyWorker = require("./ProxyWorker");
 
 const TARGET_URL = "https://dashboard.webshare.io/register";
-const WORKER_STAGGER_MS = 10 * 1000; // 10 seconds between worker starts to avoid rate limiting
+const WORKER_STAGGER_MS = 10 * 1000;
 const GOOGLE_SELECTORS = {
     emailInput: "#identifierId",
     emailNext: "#identifierNext",
@@ -212,208 +200,6 @@ async function fetchProxies(page, planId, log) {
     return results;
 }
 
-function saveProxies(proxies, log) {
-    const resultFile = getResultFile("proxy");
-
-    ensureFileExists(resultFile);
-
-    proxies.forEach((proxy) => {
-        const line = `${proxy.proxy_address}:${proxy.port}:${proxy.username}:${proxy.password}\n`;
-        fs.appendFileSync(resultFile, line);
-    });
-
-    log(`Saved ${proxies.length} proxies to ${resultFile}`);
-}
-
-async function processProxyAccount(
-    account,
-    browserArgsIndex,
-    workerIndex,
-    log,
-    updateProgress,
-) {
-    const config = getConfig();
-    let poolProxy = null;
-    let proxy = account.proxy || null;
-
-    // Skip proxy pool for proxy automation - free datacenter proxies trigger Google CAPTCHA
-    // Use direct connection for registration, get clean proxies from successful signups
-    // if (!proxy && config.proxyPoolFile) {
-    //     poolProxy = await acquireProxy(log, updateProgress);
-    //     proxy = poolProxy;
-    // }
-
-    updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser for ${account.email}`);
-
-    const { browser, page } = await launchBrowser(
-        browserArgsIndex,
-        workerIndex,
-        proxy,
-    );
-
-    try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        await openProxySignUp(page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await handleGoogleLoginPopup(page, account, log);
-
-        updateProgress({ step: STEPS.WAITING });
-        await waitForDashboard(page, log);
-
-        updateProgress({ step: STEPS.HARVESTING });
-        const planId = await goToProxyList(page, log);
-
-        updateProgress({ step: STEPS.GETTING_TOKEN });
-        const proxies = await fetchProxies(page, planId, log);
-        saveProxies(proxies, log);
-
-        removeAccount(account.rawLine);
-        log(`Account successful! Removed: ${account.email}`);
-
-        await sleep(config.delays.beforeBrowserClose);
-    } finally {
-        await browser.close();
-        log("Browser closed.");
-        if (poolProxy) {
-            releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
-        }
-    }
-}
-
-async function runProxyWorker(
-    workerAccounts,
-    workerId,
-    browserArgsIndex,
-    workerIndex,
-    total,
-    progress,
-    log,
-) {
-    const config = getConfig();
-
-    let successCount = 0;
-    let failedCount = 0;
-    let processedCount = 0;
-
-    const accountStats = [];
-    const queue = [...workerAccounts];
-
-    while (queue.length > 0) {
-        const account = queue[0];
-        let hasLock = false;
-
-        if (queue.length > 1) {
-            if (!tryAcquireAccountLock(account.email)) {
-                log(
-                    `[${workerId}] ${account.email} is locked, moving to back of queue.`,
-                );
-                queue.push(queue.shift());
-                await sleep(500);
-                continue;
-            }
-
-            hasLock = true;
-        }
-
-        const updateProgress = (payload) => {
-            progress.updateWorker(workerId, {
-                ...payload,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        };
-
-        const startTime = Date.now();
-        let accountSuccess = false;
-        let accountError = null;
-
-        try {
-            if (!hasLock) {
-                await acquireAccountLock(account.email, log, updateProgress);
-                hasLock = true;
-            }
-
-            queue.shift();
-
-            await processProxyAccount(
-                account,
-                browserArgsIndex,
-                workerIndex,
-                log,
-                updateProgress,
-            );
-
-            accountSuccess = true;
-            successCount += 1;
-            processedCount += 1;
-
-            progress.updateWorker(workerId, {
-                step: STEPS.DONE,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        } catch (error) {
-            accountSuccess = false;
-            accountError = error.message;
-            failedCount += 1;
-            processedCount += 1;
-
-            appendErrorAccount(account, error.message, "Proxy");
-            browserArgsIndex = (browserArgsIndex + 1) % config.browserArgsSets.length;
-
-            log(`[${workerId}] Error: ${error.message}`);
-
-            progress.updateWorker(workerId, {
-                step: STEPS.ERROR,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        } finally {
-            const duration = Date.now() - startTime;
-
-            accountStats.push({
-                email: account.email,
-                rawLine: account.rawLine,
-                success: accountSuccess,
-                duration,
-                error: accountError,
-            });
-
-            if (hasLock) {
-                releaseAccountLock(account.email);
-            }
-        }
-
-        if (queue.length > 0) {
-            progress.updateWorker(workerId, { step: STEPS.WAITING });
-            await sleep(config.delays.betweenAccounts);
-        }
-    }
-
-    progress.updateWorker(workerId, {
-        step: STEPS.DONE,
-        email: "Done",
-        success: successCount,
-        failed: failedCount,
-        current: workerAccounts.length,
-    });
-
-    return {
-        successCount,
-        failedCount,
-        accounts: accountStats,
-        label: `Proxy W${workerIndex + 1}`,
-    };
-}
 
 async function runProxyAutomation(sharedProgress = null) {
     const config = getConfig();
@@ -445,6 +231,14 @@ async function runProxyAutomation(sharedProgress = null) {
         progress.addWorker(`proxy-${i}`, chunk.length, `Proxy W${i + 1}`);
     });
 
+    const worker = new ProxyWorker(
+        openProxySignUp,
+        handleGoogleLoginPopup,
+        waitForDashboard,
+        goToProxyList,
+        fetchProxies,
+    );
+
     // Stagger worker starts to avoid rate limiting on registration endpoint
     const workerPromises = [];
     for (let i = 0; i < chunks.length; i++) {
@@ -456,7 +250,7 @@ async function runProxyAutomation(sharedProgress = null) {
         }
 
         workerPromises.push(
-            runProxyWorker(
+            worker.run(
                 chunk,
                 `proxy-${i}`,
                 browserArgsIndex,
@@ -464,6 +258,7 @@ async function runProxyAutomation(sharedProgress = null) {
                 accounts.length,
                 progress,
                 logger.log,
+                false,
             )
         );
     }

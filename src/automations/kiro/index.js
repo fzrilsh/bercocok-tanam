@@ -1,32 +1,17 @@
-const fs = require("fs");
-const { getConfig, getResultFile, SHARED_SELECTORS } = require("../../config");
+const { getConfig, SHARED_SELECTORS } = require("../../config");
 const {
     sleep,
     readAccounts,
-    removeAccount,
-    appendErrorAccount,
     chunkAccounts,
     createFileLogger,
     formatDuration,
-    acquireAccountLock,
-    releaseAccountLock,
-    tryAcquireAccountLock,
-    ensureFileExists,
-    acquireProxy,
-    releaseProxy,
 } = require("../../utils");
-const { launchBrowser } = require("../../browser");
-const {
-    completeGoogleLogin,
-    clickSelector,
-    clickFirstVisibleSelector,
-} = require("../../providers/google/login");
+const { clickSelector, clickFirstVisibleSelector } = require("../../browser/helpers");
 const { STEPS, createProgressManager } = require("../../cli/progress");
 const { printReport } = require("../../cli/reporter");
-const { createRouter } = require("../../providers/router");
+const KiroWorker = require("./KiroWorker");
 
 const TARGET_URL = "https://app.kiro.dev/signin/";
-const QUEUE_RETRY_DELAY_MS = 500; // Wait before retrying locked account from queue
 
 async function openKiroSignIn(page, log) {
     const config = getConfig();
@@ -109,227 +94,6 @@ async function getRefreshToken(page, log) {
     return refreshToken.value;
 }
 
-function saveRefreshToken(email, refreshToken, log) {
-    const resultFile = getResultFile("kiro");
-
-    ensureFileExists(resultFile);
-
-    fs.appendFileSync(
-        resultFile,
-        `${email}|${refreshToken}\n`,
-    );
-
-    log(`Refresh token saved to ${resultFile}`);
-}
-
-async function importRefreshToken(refreshToken, log) {
-    const { ok, router, error } = await createRouter(null, log);
-    if (!ok) {
-        throw new Error(`Router ${error}`);
-    }
-
-    log("Importing refresh token to router...");
-    await router.importRefreshToken("kiro", refreshToken);
-    log("Successfully imported token!");
-}
-
-async function processKiroAccount(
-    account,
-    browserArgsIndex,
-    workerIndex,
-    log,
-    updateProgress,
-    useProxy = true,
-) {
-    const config = getConfig();
-    let poolProxy = null;
-    let proxy = account.proxy || null;
-
-    if (!proxy && config.proxyPoolFile && useProxy) {
-        poolProxy = await acquireProxy(log, updateProgress);
-        proxy = poolProxy;
-    }
-
-    updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-    log(`Launching browser for ${account.email}`);
-
-    const { browser, page } = await launchBrowser(
-        browserArgsIndex,
-        workerIndex,
-        proxy,
-    );
-
-    try {
-        updateProgress({ step: STEPS.NAVIGATING });
-        await openKiroSignIn(page, log);
-
-        updateProgress({ step: STEPS.GOOGLE_LOGIN });
-        await completeGoogleLogin(page, account, log);
-        await handlePostLogin(page, log);
-
-        updateProgress({ step: STEPS.WAITING });
-        await waitForDashboard(page, log);
-
-        updateProgress({ step: STEPS.GETTING_TOKEN });
-        const refreshToken = await getRefreshToken(page, log);
-        saveRefreshToken(account.email, refreshToken, log);
-
-        updateProgress({ step: STEPS.IMPORTING });
-        try {
-            await importRefreshToken(refreshToken, log);
-        } catch (importErr) {
-            log(`Router import failed (continuing): ${importErr.message}`);
-        }
-
-        removeAccount(account.rawLine);
-        log(
-            `Account login successful! Removed from accounts file: ${account.email}`,
-        );
-
-        await sleep(config.delays.beforeBrowserClose);
-    } finally {
-        await browser.close();
-        log("Browser closed.");
-        if (poolProxy) {
-            releaseProxy(poolProxy);
-            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
-        }
-    }
-}
-
-async function runKiroWorker(
-    workerAccounts,
-    workerId,
-    browserArgsIndex,
-    workerIndex,
-    total,
-    progress,
-    log,
-    useProxy = true,
-) {
-    const config = getConfig();
-
-    let successCount = 0;
-    let failedCount = 0;
-    let processedCount = 0;
-
-    const accountStats = [];
-    const queue = [...workerAccounts];
-
-    while (queue.length > 0) {
-        const account = queue[0];
-        let hasLock = false;
-
-        if (queue.length > 1) {
-            if (!tryAcquireAccountLock(account.email)) {
-                log(
-                    `[${workerId}] ${account.email} is locked, moving to back of queue.`,
-                );
-                queue.push(queue.shift());
-                await sleep(QUEUE_RETRY_DELAY_MS);
-                continue;
-            }
-
-            hasLock = true;
-        }
-
-        const updateProgress = (payload) => {
-            progress.updateWorker(workerId, {
-                ...payload,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        };
-
-        const startTime = Date.now();
-        let accountSuccess = false;
-        let accountError = null;
-
-        try {
-            if (!hasLock) {
-                await acquireAccountLock(account.email, log, updateProgress);
-                hasLock = true;
-            }
-
-            queue.shift();
-
-            await processKiroAccount(
-                account,
-                browserArgsIndex,
-                workerIndex,
-                log,
-                updateProgress,
-                useProxy,
-            );
-
-            accountSuccess = true;
-            successCount += 1;
-            processedCount += 1;
-
-            progress.updateWorker(workerId, {
-                step: STEPS.DONE,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        } catch (error) {
-            accountSuccess = false;
-            accountError = error.message;
-            failedCount += 1;
-            processedCount += 1;
-
-            appendErrorAccount(account, error.message, "Kiro");
-            browserArgsIndex = (browserArgsIndex + 1) % config.browserArgsSets.length;
-
-            log(`[${workerId}] Error: ${error.message}`);
-
-            progress.updateWorker(workerId, {
-                step: STEPS.ERROR,
-                email: account.email,
-                success: successCount,
-                failed: failedCount,
-                current: processedCount,
-            });
-        } finally {
-            const duration = Date.now() - startTime;
-
-            accountStats.push({
-                email: account.email,
-                rawLine: account.rawLine,
-                success: accountSuccess,
-                duration,
-                error: accountError,
-            });
-
-            if (hasLock) {
-                releaseAccountLock(account.email);
-            }
-        }
-
-        if (queue.length > 0) {
-            progress.updateWorker(workerId, { step: STEPS.WAITING });
-            await sleep(config.delays.betweenAccounts);
-        }
-    }
-
-    progress.updateWorker(workerId, {
-        step: STEPS.DONE,
-        email: "Done",
-        success: successCount,
-        failed: failedCount,
-        current: workerAccounts.length,
-    });
-
-    return {
-        successCount,
-        failedCount,
-        accounts: accountStats,
-        label: `Kiro W${workerIndex + 1}`,
-    };
-}
 
 async function runKiroAutomation(sharedProgress = null, useProxy = true) {
     const config = getConfig();
@@ -356,11 +120,18 @@ async function runKiroAutomation(sharedProgress = null, useProxy = true) {
         progress.addWorker(`kiro-${i}`, chunk.length, `Kiro W${i + 1}`);
     });
 
+    const worker = new KiroWorker(
+        openKiroSignIn,
+        handlePostLogin,
+        waitForDashboard,
+        getRefreshToken,
+    );
+
     const results = await Promise.all(
         chunks.map((chunk, i) => {
             const browserArgsIndex = i % config.browserArgsSets.length;
 
-            return runKiroWorker(
+            return worker.run(
                 chunk,
                 `kiro-${i}`,
                 browserArgsIndex,
