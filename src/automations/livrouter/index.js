@@ -216,20 +216,113 @@ async function processLivRouterAccountStandalone(
     const page = browserResult.page;
     
     try {
-        const oauthUrl = oauth.buildGitHubOAuthUrl(
-            GITHUB_CLIENT_ID,
-            `${BASE_URL}/oauth/github`,
-            null,
-            affCode ? { affCode } : {}
-        );
+        let loginUrl = `${BASE_URL}/login`;
+        if (affCode) {
+            loginUrl += `?aff=${affCode}`;
+            log(`Navigating to /login with affiliate code: ${affCode}`);
+        } else {
+            log('Navigating to /login...');
+        }
+
+        await page.goto(loginUrl, { waitUntil: 'networkidle2' });
+        await sleep(1000);
+
+        log('Checking consent checkbox...');
+        const consentCheckbox = await page.$('.login-reference-consent input[type="checkbox"], .login-policy-consent input[type="checkbox"]');
+        if (consentCheckbox) {
+            await consentCheckbox.click();
+            log('✅ Consent checkbox checked');
+            await sleep(500);
+        } else {
+            log('⚠️ Consent checkbox not found (might not be required)');
+        }
+
+        log('Looking for GitHub login button...');
+        const githubButton = await page.evaluateHandle(() => {
+            const elements = Array.from(document.querySelectorAll('button, a, div[role="button"]'));
+            return elements.find(el => {
+                const text = el.textContent?.toLowerCase() || '';
+                const href = el.getAttribute('href') || '';
+                return text.includes('github') || href.includes('github');
+            });
+        });
+
+        if (!githubButton || !githubButton.asElement()) {
+            throw new Error('GitHub login button not found on /login page');
+        }
+
+        log('Clicking GitHub login button...');
+        await Promise.all([
+            page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+            githubButton.asElement().click()
+        ]);
         
-        const { cookies } = await executeGitHubOAuthAndIntercept(
-            page,
-            githubAccount,
-            oauthUrl,
-            null,
-            log
-        );
+        log('Filling GitHub login form...');
+        const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
+        await emailInput.click();
+        await sleep(300);
+        await emailInput.evaluate(el => el.value = '');
+        await emailInput.type(githubAccount.email, { delay: 80 });
+
+        const passwordInput = await page.waitForSelector('input#password', { timeout: 5000, visible: true });
+        await passwordInput.click();
+        await sleep(300);
+        await passwordInput.evaluate(el => el.value = '');
+        await passwordInput.type(githubAccount.password, { delay: 80 });
+
+        await sleep(500);
+        log('Submitting GitHub login form...');
+        await page.keyboard.press('Enter');
+
+        log('Waiting for OAuth authorization...');
+        try {
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 10000 });
+        } catch (navErr) {
+            log('Navigation wait timeout (continuing anyway)');
+        }
+
+        const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', {
+            timeout: 15000,
+            visible: true
+        }).then(() => true).catch(() => false);
+
+        if (buttonFound) {
+            log('Authorization button found, clicking...');
+            await sleep(2000);
+            try {
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+                    page.click('button[name="authorize"][value="1"]', { delay: 100 })
+                ]);
+                log('✅ Authorization completed');
+            } catch (err) {
+                log(`Authorization click failed: ${err.message}, trying JavaScript click...`);
+                await Promise.all([
+                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+                    page.evaluate(() => {
+                        const btn = document.querySelector('button[name="authorize"][value="1"]');
+                        if (btn) btn.click();
+                    })
+                ]);
+                log('✅ Authorization completed via JavaScript click');
+            }
+        } else {
+            log('No authorization button - assuming already authorized');
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+        }
+
+        await sleep(3000);
+        
+        const finalUrl = page.url();
+        log(`Final URL after OAuth: ${finalUrl}`);
+
+        if (finalUrl.includes('/error') || finalUrl.includes('mismatch')) {
+            const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+            throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
+        }
+
+        const cookies = await page.cookies();
+        const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
         
         const localStorageData = await page.evaluate(() => {
             try {
