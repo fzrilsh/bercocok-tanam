@@ -7,7 +7,7 @@ const { runKiroAutomation } = require("./src/automations/kiro");
 const { runCloudflareAutomation } = require("./src/automations/cloudflare");
 const { runCodebuddyAutomation, runCodebuddyCreateAndImport } = require("./src/automations/codebuddy");
 const { runTokenGoAutomation } = require("./src/automations/tokengo");
-const { runLivRouterAutomation, runLivRouterCreateAndImport } = require("./src/automations/livrouter");
+const { runLivRouterAutomation, runLivRouterCreateAndImport, runLivRouterPoolMode } = require("./src/automations/livrouter");
 const { runGitHubSignupAutomation, checkPythonAvailable } = require("./src/automations/github");
 const { runGrokAutomation } = require("./src/automations/grok");
 const { openSettings } = require("./src/cli/settings");
@@ -312,7 +312,6 @@ async function runSelectedAutomations(
             return automationMap[type].fn(sharedProgress, proxySettings[type], tokengoOptions || {});
         }
         if (type === 'livrouter') {
-            // Create mode: each GitHub success immediately runs LivRouter OAuth
             if (livrouterOptions && livrouterOptions.mode === 'create') {
                 return runLivRouterCreateAndImport(
                     livrouterOptions.createCount || 1,
@@ -321,7 +320,24 @@ async function runSelectedAutomations(
                     livrouterOptions.tempEmailProvider,
                 );
             }
-            // Existing mode: use github_keys.txt
+            if (livrouterOptions && livrouterOptions.mode === 'pool-create') {
+                return runLivRouterPoolMode(
+                    livrouterOptions.workerCount || 1,
+                    false,
+                    sharedProgress,
+                    proxySettings.livrouter,
+                    livrouterOptions.tempEmailProvider,
+                );
+            }
+            if (livrouterOptions && livrouterOptions.mode === 'pool-existing') {
+                return runLivRouterPoolMode(
+                    livrouterOptions.workerCount || 1,
+                    true,
+                    sharedProgress,
+                    proxySettings.livrouter,
+                    null,
+                );
+            }
             return automationMap[type].fn(sharedProgress, proxySettings[type], livrouterOptions || {});
         }
         return automationMap[type].fn(sharedProgress, proxySettings[type]);
@@ -665,13 +681,22 @@ async function main() {
                         const existingGithub = countGithubKeys();
                         const choices = [
                             {
-                                name: `Use existing github_keys.txt (${existingGithub} account${existingGithub === 1 ? "" : "s"})`,
+                                name: `Use existing github_keys.txt (${existingGithub} account${existingGithub === 1 ? "" : "s"}) - Chaining mode`,
                                 value: "existing",
                                 disabled: existingGithub === 0 ? "file empty / not found" : false,
                             },
                             {
-                                name: "Create GitHub account then immediately login LivRouter (per account)",
+                                name: "Create GitHub + LivRouter (chaining mode, per account)",
                                 value: "create",
+                            },
+                            {
+                                name: "Pool mode: Create 1 master + N workers (create GitHub on-the-fly)",
+                                value: "pool-create",
+                            },
+                            {
+                                name: `Pool mode: Create 1 master + use existing workers from github_keys.txt (${existingGithub} available)`,
+                                value: "pool-existing",
+                                disabled: existingGithub === 0 ? "file empty / not found" : false,
                             },
                         ];
 
@@ -719,6 +744,55 @@ async function main() {
                                 createCount: parseInt(createCount),
                                 tempEmailProvider: providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers),
                             };
+                        } else if (livrouterMode === "pool-create" || livrouterMode === "pool-existing") {
+                            const { workerCount } = await inquirer.prompt([
+                                {
+                                    type: "input",
+                                    name: "workerCount",
+                                    message: "How many worker accounts (workers will use master's affiliate code)?",
+                                    default: "5",
+                                    validate: (input) => {
+                                        const num = parseInt(input);
+                                        if (isNaN(num) || num <= 0) return "Please enter a valid positive number";
+                                        return true;
+                                    },
+                                },
+                            ]);
+
+                            console.log("");
+                            console.log(colors.yellow("⚠️  Pool Mode Notes:"));
+                            console.log(colors.yellow(`   • Master account will collect rewards from ${workerCount} workers`));
+                            console.log(colors.yellow(`   • Expected credits: ${parseInt(workerCount) * 3} (${workerCount} × 3)`));
+                            console.log(colors.yellow("   • Transfer failure will abort entire process"));
+                            console.log(colors.yellow("   • Failed accounts will retry automatically"));
+                            console.log("");
+
+                            if (livrouterMode === "pool-create") {
+                                const { providers } = await inquirer.prompt([
+                                    {
+                                        type: "checkbox",
+                                        name: "providers",
+                                        message: "Select temp email providers for GitHub signup (auto = random from selected):",
+                                        choices: [
+                                            { name: "ncaori (stateless, no cookies)", value: "ncaori", checked: true },
+                                            { name: "1secemail (stateful, with cookies)", value: "1secemail", checked: true },
+                                            { name: "gmail (plus-address, OTP via Gmail API)", value: "gmail", checked: false },
+                                            { name: "mail.cx (API token + custom domains)", value: "mailcx", checked: false },
+                                        ],
+                                    },
+                                ]);
+
+                                livrouterOptions = {
+                                    mode: "pool-create",
+                                    workerCount: parseInt(workerCount),
+                                    tempEmailProvider: providers.length === 0 ? "auto" : (providers.length === 1 ? providers[0] : providers),
+                                };
+                            } else {
+                                livrouterOptions = {
+                                    mode: "pool-existing",
+                                    workerCount: parseInt(workerCount),
+                                };
+                            }
                         } else {
                             livrouterOptions = { mode: "existing" };
                         }

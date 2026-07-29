@@ -182,7 +182,190 @@ async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
     return { userId: returnedUserId, affCode };
 }
 
+function buildAuthHeaders(accessToken, sessionId, userId) {
+    return {
+        "authorization": `Bearer ${accessToken}`,
+        "x-auth-session": sessionId,
+        "new-api-user": String(userId),
+        "origin": BASE_URL,
+        "referer": `${BASE_URL}/api-keys`,
+        "content-type": "application/json",
+        "accept": "*/*",
+        "cache-control": "no-cache",
+        "pragma": "no-cache",
+    };
+}
 
+async function processLivRouterAccountStandalone(
+    githubAccount,
+    affCode,
+    customRouterName,
+    browserArgsIndex,
+    useProxy,
+    log,
+    updateProgress
+) {
+    const { launchBrowser } = require("../../browser");
+    const { createRouter } = require("../../providers/router");
+    const fs = require("fs");
+    
+    log(`Processing account: ${githubAccount.email} (affCode: ${affCode || "none"})`);
+    
+    const browserResult = await launchBrowser(browserArgsIndex, 0, null);
+    const browser = browserResult.browser;
+    const page = browserResult.page;
+    
+    try {
+        const oauthUrl = oauth.buildGitHubOAuthUrl(
+            GITHUB_CLIENT_ID,
+            `${BASE_URL}/oauth/github`,
+            null,
+            affCode ? { affCode } : null
+        );
+        
+        const { cookies } = await executeGitHubOAuthAndIntercept(
+            page,
+            githubAccount,
+            oauthUrl,
+            null,
+            log
+        );
+        
+        const localStorageData = await page.evaluate(() => {
+            try {
+                const stored = localStorage.getItem("livrouter_user");
+                if (!stored) return null;
+                const parsed = JSON.parse(stored);
+                return {
+                    accessToken: parsed.accessToken || null,
+                    userId: parsed.id || null,
+                    sessionId: parsed.sessionId || null,
+                };
+            } catch (e) {
+                return { error: e.message };
+            }
+        });
+        
+        if (!localStorageData || localStorageData.error) {
+            throw new Error(`Failed to extract localStorage: ${localStorageData?.error || "No data found"}`);
+        }
+        
+        let accessToken = localStorageData.accessToken;
+        let sessionId = localStorageData.sessionId;
+        let userId = localStorageData.userId;
+        
+        const axiosInstance = createAxiosInstance(null, log);
+        
+        if (!userId) {
+            const userInfo = await getUserInfo(axiosInstance, cookies, null, log);
+            userId = userInfo.userId;
+        }
+        
+        if (!accessToken || !sessionId) {
+            throw new Error("Missing accessToken or sessionId from localStorage");
+        }
+        
+        await createToken(axiosInstance, accessToken, sessionId, userId, log);
+        const tokenId = await getTokenId(axiosInstance, accessToken, sessionId, userId, log);
+        const apiKey = await revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log);
+        
+        let userAffCode = null;
+        if (!affCode) {
+            const userInfo = await getUserInfo(axiosInstance, cookies, userId, log);
+            userAffCode = userInfo.affCode;
+        }
+        
+        const { ok, router, error } = await createRouter(null, log);
+        if (!ok) {
+            throw new Error(`Router ${error}`);
+        }
+        
+        const providerNodeId = await router.ensureProviderNode(
+            "LivRouter",
+            "livrouter",
+            "chat",
+            "https://livrouter.com/api/v1",
+            "openai-compatible"
+        );
+        
+        await router.importProvider(
+            providerNodeId,
+            customRouterName,
+            apiKey,
+            { defaultModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
+        );
+        
+        log(`✅ Account ${githubAccount.email} imported as "${customRouterName}"`);
+        
+        const { ensureFileExists } = require("../../utils");
+        ensureFileExists(RESULT_FILE);
+        fs.appendFileSync(RESULT_FILE, `${githubAccount.email}|${userId}|${apiKey}\n`);
+        
+        await browser.close();
+        
+        return {
+            email: githubAccount.email,
+            userId,
+            accessToken,
+            sessionId,
+            affCode: userAffCode,
+            apiKey
+        };
+    } catch (error) {
+        if (browser) await browser.close().catch(() => {});
+        throw error;
+    }
+}
+
+async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log) {
+    const { accessToken, sessionId, userId, email } = masterCredentials;
+    const axiosInstance = createAxiosInstance(null, log);
+    
+    log(`[Worker ${workerIndex}] Checking master ${email} affiliate balance...`);
+    
+    const response = await axiosRequestWithRetry(
+        axiosInstance,
+        "GET",
+        `${BASE_URL}/api/gateway/user/self`,
+        {
+            headers: {
+                "authorization": `Bearer ${accessToken}`,
+                "x-auth-session": sessionId,
+                "new-api-user": String(userId),
+                "accept": "*/*",
+                "referer": `${BASE_URL}/dashboard/profile`,
+                "content-type": "application/json",
+                "cache-control": "no-cache",
+                "pragma": "no-cache",
+            }
+        },
+        log
+    );
+    
+    if (response.status !== 200) {
+        throw new Error(`Failed to get master user info: HTTP ${response.status}`);
+    }
+    
+    const affBalance = response.data.data?.aff_count || 0;
+    
+    if (affBalance <= 0) {
+        throw new Error(`No affiliate balance to transfer (balance: ${affBalance})`);
+    }
+    
+    log(`[Worker ${workerIndex}] Transferring ${affBalance} credits from ${email}...`);
+    
+    await transferAffiliateReward(
+        axiosInstance,
+        accessToken,
+        sessionId,
+        userId,
+        affBalance,
+        log
+    );
+    
+    log(`[Worker ${workerIndex}] ✅ Transfer successful: +${affBalance} credits to master balance`);
+    return affBalance;
+}
 
 async function createToken(axiosInstance, accessToken, sessionId, userId, log) {
     log("Phase 3.1: Creating new token entry...");
@@ -699,7 +882,285 @@ async function runLivRouterCreateAndImport(
     return { successCount, failedCount, results };
 }
 
+async function runLivRouterPoolMode(
+    workerCount,
+    useExistingWorkers,
+    sharedProgress = null,
+    useProxy = true,
+    tempEmailProvider = null
+) {
+    const config = getConfig();
+    const logger = createFileLogger();
+    const { createGitHubAccountViaPython } = require("../github");
+    const fs = require("fs");
+
+    if (workerCount <= 0) {
+        logger.log("Worker count must be > 0");
+        logger.close();
+        return null;
+    }
+
+    if (!sharedProgress) {
+        console.log("");
+        console.log(`🎯 LivRouter Pool Mode: 1 master + ${workerCount} workers`);
+        console.log("   Master will collect affiliate rewards from all workers");
+        console.log("   ⚠️  Transfer failure will abort entire process");
+        console.log("");
+    }
+
+    const startedAt = Date.now();
+    const progress = sharedProgress || createProgressManager(
+        `LivRouter Pool Mode — 1 master + ${workerCount} workers`
+    );
+
+    const workerId = "livrouter-pool-0";
+    progress.addWorker(workerId, workerCount + 1, "LivRouter Pool");
+
+    let masterCredentials = null;
+    let masterCreationAttempts = 0;
+    let workerSuccessCount = 0;
+    let totalTransferred = 0;
+    const accountStats = [];
+
+    const updateProgress = (payload) => {
+        progress.updateWorker(workerId, {
+            ...payload,
+            success: workerSuccessCount,
+            failed: 0,
+            current: masterCredentials ? workerSuccessCount : 0,
+        });
+    };
+
+    logger.log("=== PHASE 1: Creating Master Account ===");
+    
+    while (!masterCredentials) {
+        try {
+            masterCreationAttempts++;
+            updateProgress({
+                step: STEPS.LAUNCHING,
+                email: `Creating master account (attempt ${masterCreationAttempts})...`,
+            });
+            
+            logger.log(`[Master] Creation attempt ${masterCreationAttempts}...`);
+
+            const masterGitHub = await createGitHubAccountViaPython(
+                0,
+                useProxy,
+                logger.log,
+                updateProgress,
+                tempEmailProvider
+            );
+
+            if (!masterGitHub?.success || !masterGitHub.account) {
+                throw new Error("Master GitHub account creation failed");
+            }
+
+            const masterAccount = {
+                email: masterGitHub.account.email,
+                password: masterGitHub.account.password,
+                username: masterGitHub.account.username,
+            };
+
+            logger.log(`[Master] GitHub created: ${masterAccount.email}, logging into LivRouter...`);
+
+            masterCredentials = await processLivRouterAccountStandalone(
+                masterAccount,
+                null,
+                `Master Account ${workerCount * 3} credit`,
+                0,
+                useProxy,
+                logger.log,
+                updateProgress
+            );
+
+            logger.log(`✅ Master account ready!`);
+            logger.log(`   Email: ${masterCredentials.email}`);
+            logger.log(`   User ID: ${masterCredentials.userId}`);
+            logger.log(`   Affiliate Code: ${masterCredentials.affCode}`);
+            logger.log("");
+
+        } catch (error) {
+            logger.log(`❌ Master creation attempt ${masterCreationAttempts} failed: ${error.message}`);
+            logger.log("   Retrying master account creation...");
+            await sleep(config.delays.betweenAccounts || 5000);
+        }
+    }
+
+    logger.log(`=== PHASE 2: Processing ${workerCount} Worker Accounts ===`);
+    logger.log(`Workers will use master affiliate code: ${masterCredentials.affCode}`);
+    logger.log("");
+
+    let existingAccounts = [];
+    if (useExistingWorkers) {
+        const GITHUB_KEYS_FILE = path.join(ROOT_DIR, "github_keys.txt");
+        if (!fs.existsSync(GITHUB_KEYS_FILE)) {
+            logger.log("❌ github_keys.txt not found");
+            logger.close();
+            return null;
+        }
+
+        const lines = fs.readFileSync(GITHUB_KEYS_FILE, "utf-8")
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l && !l.startsWith("#"));
+
+        existingAccounts = lines.map((rawLine) => {
+            const parts = rawLine.includes(":") ? rawLine.split(":") : rawLine.split("|");
+            return {
+                email: parts[0]?.trim() || "",
+                password: parts[1]?.trim() || "",
+                username: parts[2]?.trim() || parts[0]?.split("@")[0],
+            };
+        }).filter((a) => a.email && a.password);
+
+        if (existingAccounts.length === 0) {
+            logger.log("❌ No valid GitHub accounts found in github_keys.txt");
+            logger.close();
+            return null;
+        }
+
+        logger.log(`Found ${existingAccounts.length} existing GitHub accounts`);
+    }
+
+    for (let i = 0; i < workerCount; i++) {
+        let workerSuccess = false;
+        let workerAttempts = 0;
+        let workerEmail = `worker-${i + 1}`;
+
+        while (!workerSuccess) {
+            try {
+                workerAttempts++;
+                updateProgress({
+                    step: STEPS.LAUNCHING,
+                    email: `Worker ${i + 1}/${workerCount} (attempt ${workerAttempts})...`,
+                });
+
+                logger.log(`[Worker ${i + 1}/${workerCount}] Attempt ${workerAttempts}...`);
+
+                let workerGitHub;
+                if (useExistingWorkers) {
+                    if (workerSuccessCount >= existingAccounts.length) {
+                        throw new Error(`Not enough GitHub accounts in file (need ${workerCount}, have ${existingAccounts.length})`);
+                    }
+                    workerGitHub = { success: true, account: existingAccounts[workerSuccessCount] };
+                } else {
+                    workerGitHub = await createGitHubAccountViaPython(
+                        i + 1,
+                        useProxy,
+                        logger.log,
+                        updateProgress,
+                        tempEmailProvider
+                    );
+                }
+
+                if (!workerGitHub?.success || !workerGitHub.account) {
+                    throw new Error("Worker GitHub account creation failed");
+                }
+
+                const workerAccount = workerGitHub.account;
+                workerEmail = workerAccount.email;
+
+                logger.log(`[Worker ${i + 1}] GitHub: ${workerEmail}, logging into LivRouter with master affCode...`);
+
+                await processLivRouterAccountStandalone(
+                    workerAccount,
+                    masterCredentials.affCode,
+                    "Worker Account 3 Credit",
+                    (i + 1) % config.browserArgsSets.length,
+                    useProxy,
+                    logger.log,
+                    updateProgress
+                );
+
+                logger.log(`[Worker ${i + 1}] ✅ LivRouter login successful, transferring reward to master...`);
+
+                const transferred = await transferWorkerRewardToMaster(
+                    masterCredentials,
+                    i + 1,
+                    logger.log
+                );
+
+                totalTransferred += transferred;
+                workerSuccessCount++;
+                workerSuccess = true;
+
+                accountStats.push({
+                    email: workerEmail,
+                    success: true,
+                    duration: 0,
+                    error: null,
+                });
+
+                logger.log(`✅ Worker ${i + 1}/${workerCount} complete! Master total: ${totalTransferred} credits`);
+                logger.log("");
+
+                updateProgress({
+                    step: STEPS.DONE,
+                    email: workerEmail,
+                    success: workerSuccessCount,
+                    failed: 0,
+                    current: workerSuccessCount,
+                });
+
+            } catch (error) {
+                if (error.message.includes("transfer") || error.message.includes("affiliate") || error.message.includes("No affiliate balance")) {
+                    logger.log(`❌ TRANSFER FAILED for worker ${i + 1} - ABORTING POOL MODE`);
+                    logger.log(`   Error: ${error.message}`);
+                    logger.close();
+                    
+                    if (!sharedProgress) {
+                        progress.stop();
+                    }
+                    
+                    throw new Error(`Transfer failed for worker ${i + 1}: ${error.message}`);
+                }
+
+                logger.log(`❌ Worker ${i + 1} attempt ${workerAttempts} failed: ${error.message}`);
+                logger.log("   Retrying worker account...");
+                await sleep(config.delays.betweenAccounts || 5000);
+            }
+        }
+
+        if (i < workerCount - 1) {
+            await sleep(config.delays.betweenAccounts || 5000);
+        }
+    }
+
+    if (!sharedProgress) {
+        progress.stop();
+    }
+
+    const totalDuration = Date.now() - startedAt;
+    const results = [{
+        successCount: workerSuccessCount,
+        failedCount: 0,
+        accounts: accountStats,
+        label: "LivRouter Pool Mode",
+    }];
+
+    if (!sharedProgress) {
+        console.log("═".repeat(80));
+        console.log("🎯 LIVROUTER POOL MODE COMPLETE");
+        console.log("");
+        console.log(`   Master Account: ${masterCredentials.email}`);
+        console.log(`   Master User ID: ${masterCredentials.userId}`);
+        console.log(`   Affiliate Code: ${masterCredentials.affCode}`);
+        console.log(`   Total Credits Transferred: ${totalTransferred}`);
+        console.log(`   Workers Successful: ${workerSuccessCount}/${workerCount}`);
+        console.log(`   Duration: ${formatDuration(totalDuration)}`);
+        console.log("═".repeat(80));
+        console.log(`📄 Log: ${logger.logFile}`);
+        console.log("");
+    } else {
+        logger.log(`Pool mode complete. Master: ${masterCredentials.email}, Workers: ${workerSuccessCount}, Credits: ${totalTransferred}`);
+    }
+
+    logger.close();
+    return { successCount: workerSuccessCount, failedCount: 0, results };
+}
+
 module.exports = {
     runLivRouterAutomation,
     runLivRouterCreateAndImport,
+    runLivRouterPoolMode,
 };
