@@ -321,52 +321,37 @@ async function processLivRouterAccountStandalone(
             throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
         }
 
-        const cookies = await page.cookies();
-        const cookieString = cookies.map(c => `${c.name}=${c.value}`).join('; ');
-        
-        const localStorageData = await page.evaluate(() => {
-            try {
-                const stored = localStorage.getItem("livrouter_user");
-                if (!stored) return null;
-                const parsed = JSON.parse(stored);
-                return {
-                    accessToken: parsed.accessToken || null,
-                    userId: parsed.id || null,
-                    sessionId: parsed.sessionId || null,
-                };
-            } catch (e) {
-                return { error: e.message };
-            }
-        });
-        
-        if (!localStorageData || localStorageData.error) {
-            throw new Error(`Failed to extract localStorage: ${localStorageData?.error || "No data found"}`);
+        log('Extracting user info from localStorage...');
+        const userDataStr = await page.evaluate(() => localStorage.getItem('livrouter_user')).catch(() => null);
+
+        if (!userDataStr) {
+            throw new Error('No livrouter_user found in localStorage');
         }
-        
-        let accessToken = localStorageData.accessToken;
-        let sessionId = localStorageData.sessionId;
-        let userId = localStorageData.userId;
-        
+
+        const userData = JSON.parse(userDataStr);
+        let userId = userData.id;
+        const username = userData.username;
+        let accessToken = userData.accessToken;
+        let sessionId = userData.sessionId;
+        let userAffCode = userData.aff_code || null;
+
+        log(`User ID: ${userId}`);
+        log(`Username: ${username}`);
+        log(`Access token: ${accessToken.substring(0, 30)}...`);
+        log(`Session ID: ${sessionId}`);
+        if (userAffCode) {
+            log(`Affiliate code: ${userAffCode}`);
+        }
+
+        if (!userId || !accessToken || !sessionId) {
+            throw new Error(`Missing required data from localStorage: userId=${userId}, accessToken=${!!accessToken}, sessionId=${!!sessionId}`);
+        }
+
         const axiosInstance = createAxiosInstance(null, log);
-        
-        if (!userId) {
-            const userInfo = await getUserInfo(axiosInstance, cookies, null, log);
-            userId = userInfo.userId;
-        }
-        
-        if (!accessToken || !sessionId) {
-            throw new Error("Missing accessToken or sessionId from localStorage");
-        }
-        
+
         await createToken(axiosInstance, accessToken, sessionId, userId, log);
         const tokenId = await getTokenId(axiosInstance, accessToken, sessionId, userId, log);
         const apiKey = await revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log);
-        
-        let userAffCode = null;
-        if (!affCode) {
-            const userInfo = await getUserInfo(axiosInstance, cookies, userId, log);
-            userAffCode = userInfo.affCode;
-        }
         
         const { ok, router, error } = await createRouter(null, log);
         if (!ok) {
