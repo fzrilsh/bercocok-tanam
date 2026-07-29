@@ -931,65 +931,6 @@ async function runLivRouterPoolMode(
         });
     };
 
-    logger.log("=== PHASE 1: Creating Master Account ===");
-    
-    while (!masterCredentials) {
-        try {
-            masterCreationAttempts++;
-            updateProgress({
-                step: STEPS.LAUNCHING,
-                email: `Creating master account (attempt ${masterCreationAttempts})...`,
-            });
-            
-            logger.log(`[Master] Creation attempt ${masterCreationAttempts}...`);
-
-            const masterGitHub = await createGitHubAccountViaPython(
-                0,
-                useProxy,
-                logger.log,
-                updateProgress,
-                tempEmailProvider
-            );
-
-            if (!masterGitHub?.success || !masterGitHub.account) {
-                throw new Error("Master GitHub account creation failed");
-            }
-
-            const masterAccount = {
-                email: masterGitHub.account.email,
-                password: masterGitHub.account.password,
-                username: masterGitHub.account.username,
-            };
-
-            logger.log(`[Master] GitHub created: ${masterAccount.email}, logging into LivRouter...`);
-
-            masterCredentials = await processLivRouterAccountStandalone(
-                masterAccount,
-                null,
-                `Master Account ${workerCount * 3} credit`,
-                0,
-                useProxy,
-                logger.log,
-                updateProgress
-            );
-
-            logger.log(`✅ Master account ready!`);
-            logger.log(`   Email: ${masterCredentials.email}`);
-            logger.log(`   User ID: ${masterCredentials.userId}`);
-            logger.log(`   Affiliate Code: ${masterCredentials.affCode}`);
-            logger.log("");
-
-        } catch (error) {
-            logger.log(`❌ Master creation attempt ${masterCreationAttempts} failed: ${error.message}`);
-            logger.log("   Retrying master account creation...");
-            await sleep(config.delays.betweenAccounts || 5000);
-        }
-    }
-
-    logger.log(`=== PHASE 2: Processing ${workerCount} Worker Accounts ===`);
-    logger.log(`Workers will use master affiliate code: ${masterCredentials.affCode}`);
-    logger.log("");
-
     let existingAccounts = [];
     if (useExistingWorkers) {
         const GITHUB_KEYS_FILE = path.join(ROOT_DIR, "github_keys.txt");
@@ -1019,8 +960,81 @@ async function runLivRouterPoolMode(
             return null;
         }
 
+        if (existingAccounts.length < workerCount + 1) {
+            logger.log(`❌ Not enough accounts in github_keys.txt: need ${workerCount + 1} (1 master + ${workerCount} workers), found ${existingAccounts.length}`);
+            logger.close();
+            return null;
+        }
+
         logger.log(`Found ${existingAccounts.length} existing GitHub accounts`);
+        logger.log(`Will use: 1 master + ${workerCount} workers = ${workerCount + 1} accounts total`);
     }
+
+    logger.log("=== PHASE 1: Setting Up Master Account ===");
+    
+    while (!masterCredentials) {
+        try {
+            masterCreationAttempts++;
+            updateProgress({
+                step: STEPS.LAUNCHING,
+                email: `${useExistingWorkers ? "Using existing" : "Creating"} master account (attempt ${masterCreationAttempts})...`,
+            });
+            
+            logger.log(`[Master] ${useExistingWorkers ? "Using existing" : "Creation"} attempt ${masterCreationAttempts}...`);
+
+            let masterAccount;
+            
+            if (useExistingWorkers) {
+                masterAccount = existingAccounts[0];
+                logger.log(`[Master] Using existing GitHub account: ${masterAccount.email}`);
+            } else {
+                const masterGitHub = await createGitHubAccountViaPython(
+                    0,
+                    useProxy,
+                    logger.log,
+                    updateProgress,
+                    tempEmailProvider
+                );
+
+                if (!masterGitHub?.success || !masterGitHub.account) {
+                    throw new Error("Master GitHub account creation failed");
+                }
+
+                masterAccount = {
+                    email: masterGitHub.account.email,
+                    password: masterGitHub.account.password,
+                    username: masterGitHub.account.username,
+                };
+
+                logger.log(`[Master] GitHub created: ${masterAccount.email}, logging into LivRouter...`);
+            }
+
+            masterCredentials = await processLivRouterAccountStandalone(
+                masterAccount,
+                null,
+                `Master Account ${workerCount * 3} credit`,
+                0,
+                useProxy,
+                logger.log,
+                updateProgress
+            );
+
+            logger.log(`✅ Master account ready!`);
+            logger.log(`   Email: ${masterCredentials.email}`);
+            logger.log(`   User ID: ${masterCredentials.userId}`);
+            logger.log(`   Affiliate Code: ${masterCredentials.affCode}`);
+            logger.log("");
+
+        } catch (error) {
+            logger.log(`❌ Master setup attempt ${masterCreationAttempts} failed: ${error.message}`);
+            logger.log("   Retrying master account setup...");
+            await sleep(config.delays.betweenAccounts || 5000);
+        }
+    }
+
+    logger.log(`=== PHASE 2: Processing ${workerCount} Worker Accounts ===`);
+    logger.log(`Workers will use master affiliate code: ${masterCredentials.affCode}`);
+    logger.log("");
 
     for (let i = 0; i < workerCount; i++) {
         let workerSuccess = false;
@@ -1039,10 +1053,10 @@ async function runLivRouterPoolMode(
 
                 let workerGitHub;
                 if (useExistingWorkers) {
-                    if (workerSuccessCount >= existingAccounts.length) {
-                        throw new Error(`Not enough GitHub accounts in file (need ${workerCount}, have ${existingAccounts.length})`);
+                    if (workerSuccessCount + 1 >= existingAccounts.length) {
+                        throw new Error(`Not enough GitHub accounts in file (need ${workerCount + 1} total: 1 master + ${workerCount} workers, have ${existingAccounts.length})`);
                     }
-                    workerGitHub = { success: true, account: existingAccounts[workerSuccessCount] };
+                    workerGitHub = { success: true, account: existingAccounts[workerSuccessCount + 1] };
                 } else {
                     workerGitHub = await createGitHubAccountViaPython(
                         i + 1,
