@@ -220,7 +220,7 @@ async function processLivRouterAccountStandalone(
             GITHUB_CLIENT_ID,
             `${BASE_URL}/oauth/github`,
             null,
-            affCode ? { affCode } : null
+            affCode ? { affCode } : {}
         );
         
         const { cookies } = await executeGitHubOAuthAndIntercept(
