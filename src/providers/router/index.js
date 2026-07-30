@@ -1,6 +1,7 @@
 const { getConfig } = require('../../config');
 const { sleep } = require('../../utils');
 const { clearBrowserCookies, tryClickText } = require('../../browser/helpers');
+const axios = require('axios');
 
 class NineRouter {
     constructor(baseUrl, password, provider = null) {
@@ -8,6 +9,12 @@ class NineRouter {
         this.password = password || '';
         this.cookie = '';
         this.provider = provider;
+        
+        this.axiosInstance = axios.create({
+            baseURL: this.base,
+            timeout: 15000,
+            headers: { 'Content-Type': 'application/json' }
+        });
     }
 
     async req(method, path, body = undefined) {
@@ -15,23 +22,28 @@ class NineRouter {
             throw new Error('ROUTER9_URL not configured');
         }
 
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 15000);
-
         try {
-            const res = await fetch(`${this.base}${path}`, {
+            const config = {
                 method,
+                url: path,
                 headers: {
                     'Content-Type': 'application/json',
                     ...(this.cookie ? { Cookie: this.cookie } : {}),
                 },
-                body: body === undefined ? undefined : JSON.stringify(body),
-                signal: controller.signal,
-            });
+            };
 
-            const setCookieHeaders = res.headers.get('set-cookie');
+            if (body !== undefined) {
+                config.data = body;
+            }
+
+            const res = await this.axiosInstance.request(config);
+
+            const setCookieHeaders = res.headers['set-cookie'];
             if (setCookieHeaders) {
-                const cookieArray = Array.isArray(setCookieHeaders) ? setCookieHeaders : [setCookieHeaders];
+                const cookieArray = Array.isArray(setCookieHeaders) 
+                    ? setCookieHeaders 
+                    : [setCookieHeaders];
+                    
                 for (const raw of cookieArray) {
                     const part = String(raw).split(';')[0];
                     if (part.startsWith('auth_token=')) {
@@ -40,16 +52,15 @@ class NineRouter {
                 }
             }
 
-            const data = await res.json().catch(() => ({}));
-            if (!res.ok) {
-                const err = new Error(data.error || `HTTP ${res.status}`);
-                err.status = res.status;
-                err.data = data;
-                throw err;
-            }
-            return data;
-        } finally {
-            clearTimeout(timeoutId);
+            return res.data;
+        } catch (error) {
+            const err = new Error(
+                error.response?.data?.error || 
+                `HTTP ${error.response?.status || 'ERROR'}`
+            );
+            err.status = error.response?.status;
+            err.data = error.response?.data || {};
+            throw err;
         }
     }
 
