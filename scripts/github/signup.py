@@ -814,9 +814,6 @@ chrome.webRequest.onAuthRequired.addListener(
         print("  ├─ Checking for bot detection challenges...")
         self.wait_for_github_challenge(20)
         
-        print("  ├─ Checking for cookie consent popup...")
-        self.accept_cookies()
-        
         print("  ├─ Adding human-like behavior...")
         self.add_human_behavior()
         self.sleep(1, 2)
