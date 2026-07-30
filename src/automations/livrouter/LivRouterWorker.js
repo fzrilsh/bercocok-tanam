@@ -15,7 +15,7 @@ const GITHUB_CLIENT_ID = "Ov23lizY0ILAlo5BAEBa";
 const RESULT_FILE = path.join(ROOT_DIR, "livrouter_keys.txt");
 
 class LivRouterWorker extends BaseWorker {
-    constructor(executeGitHubOAuthAndIntercept, getUserInfo, createToken, getTokenId, revealApiKey, refreshAccessToken) {
+    constructor() {
         super({
             automationName: "LivRouter",
             workerLabel: "LivRouter W",
@@ -25,12 +25,6 @@ class LivRouterWorker extends BaseWorker {
             useProxyPool: true,
         });
 
-        this.executeGitHubOAuthAndIntercept = executeGitHubOAuthAndIntercept;
-        this.getUserInfo = getUserInfo;
-        this.createToken = createToken;
-        this.getTokenId = getTokenId;
-        this.revealApiKey = revealApiKey;
-        this.refreshAccessToken = refreshAccessToken;
         this.lastAffiliateCode = null;
     }
 
