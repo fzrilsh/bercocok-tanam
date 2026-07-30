@@ -1,5 +1,6 @@
 const { getConfig } = require("../../config");
 const { sleep } = require("../../utils");
+const { clickSelector, typeIntoSelector, clickFirstVisibleSelector } = require("../../browser/helpers");
 
 const GOOGLE_SELECTORS = {
     emailInput: "#identifierId",
@@ -7,54 +8,6 @@ const GOOGLE_SELECTORS = {
     passwordInput: 'input[type="password"]',
     passwordNext: "#passwordNext",
 };
-
-async function clickSelector(page, selector, options = {}) {
-    const config = getConfig();
-    const {
-        timeout = config.timeouts.default,
-        visible = false,
-        delayBeforeClick = 0,
-    } = options;
-
-    await page.waitForSelector(selector, { timeout, visible });
-
-    if (delayBeforeClick > 0) {
-        await sleep(delayBeforeClick);
-    }
-
-    await page.click(selector);
-}
-
-async function typeIntoSelector(page, selector, value, options = {}) {
-    const config = getConfig();
-    const {
-        timeout = config.timeouts.default,
-        visible = false,
-        delayBeforeType = 0,
-    } = options;
-
-    await page.waitForSelector(selector, { timeout, visible });
-
-    if (delayBeforeType > 0) {
-        await sleep(delayBeforeType);
-    }
-
-    await page.type(selector, value);
-}
-
-async function clickFirstVisibleSelector(page, selectors, timeout) {
-    const config = getConfig();
-    const foundSelector = await Promise.race(
-        selectors.map((selector) =>
-            page
-                .waitForSelector(selector, { visible: true, timeout })
-                .then(() => selector),
-        ),
-    );
-
-    await sleep(config.delays.beforeNextClick);
-    await page.click(foundSelector);
-}
 
 async function completeGoogleLogin(page, account, log) {
     const config = getConfig();
@@ -84,7 +37,4 @@ async function completeGoogleLogin(page, account, log) {
 
 module.exports = {
     completeGoogleLogin,
-    clickSelector,
-    typeIntoSelector,
-    clickFirstVisibleSelector,
 };

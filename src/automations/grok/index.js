@@ -5,19 +5,10 @@ const { getConfig } = require('../../config');
 const { createTempEmail } = require('../../providers/email');
 const { readInboxMetadata, readMessageBody } = require('../../providers/email/gmail-helper');
 const { resolveTurnstileExt, cleanupSealedTemps } = require('./seal-turnstile');
-const {
-    launchChrome,
-    hardenPage,
-    clearBrowserCookies,
-    getAllCookies,
-    fillInput,
-    clickText,
-    tryClickText,
-    pageLooksBlocked,
-    sleep,
-} = require('./utils');
+const { launchChrome } = require('./utils');
+const { hardenPage, clearBrowserCookies, getAllCookies, fillInput, clickText, tryClickText, pageLooksBlocked } = require('../../browser/helpers');
 const { STEPS } = require('../../cli/progress');
-const { createFileLogger } = require('../../utils');
+const { createFileLogger, sleep } = require('../../utils');
 const { addAccountToRouter } = require('../../providers/router');
 
 const PROJECT_ROOT = join(__dirname, '../../..');

@@ -349,6 +349,31 @@ async function processLivRouterAccountStandalone(
 
         const axiosInstance = createAxiosInstance(null, log);
 
+        log('Fetching user profile to get affiliate code...');
+        const userProfileResponse = await axiosRequestWithRetry(
+            axiosInstance,
+            "GET",
+            `${BASE_URL}/api/gateway/user/self`,
+            {
+                headers: {
+                    "authorization": `Bearer ${accessToken}`,
+                    "x-auth-session": sessionId,
+                    "new-api-user": String(userId),
+                    "accept": "*/*",
+                    "referer": `${BASE_URL}/dashboard/profile`,
+                    "content-type": "application/json",
+                    "cache-control": "no-cache",
+                    "pragma": "no-cache",
+                }
+            },
+            log
+        );
+
+        if (userProfileResponse.status === 200 && userProfileResponse.data?.data?.aff_code) {
+            userAffCode = userProfileResponse.data.data.aff_code;
+            log(`Affiliate code from API: ${userAffCode}`);
+        }
+
         await createToken(axiosInstance, accessToken, sessionId, userId, log);
         const tokenId = await getTokenId(axiosInstance, accessToken, sessionId, userId, log);
         const apiKey = await revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log);
@@ -366,14 +391,30 @@ async function processLivRouterAccountStandalone(
             "openai-compatible"
         );
         
+        const finalRouterName = customRouterName.replace(/\$\{userId\}/g, String(userId));
+        
         await router.importProvider(
             providerNodeId,
-            customRouterName,
+            finalRouterName,
             apiKey,
             { defaultModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
         );
         
-        log(`✅ Account ${githubAccount.email} imported as "${customRouterName}"`);
+        log(`✅ Account ${githubAccount.email} imported as "${finalRouterName}"`);
+        
+        log('Navigating to auth/refresh to capture refresh token cookie...');
+        await page.goto(`${BASE_URL}/api/gateway/user/auth/refresh`, { waitUntil: 'networkidle2' });
+        await sleep(2000);
+
+        const cookies = await page.cookies();
+        const refreshCookie = cookies.find(c => c.name === 'new_api_refresh');
+        let refreshToken = refreshCookie?.value || null;
+
+        if (refreshToken) {
+            log(`Refresh token captured: ${refreshToken.substring(0, 50)}...`);
+        } else {
+            log('⚠️  Warning: Could not capture refresh token cookie');
+        }
         
         const { ensureFileExists } = require("../../utils");
         ensureFileExists(RESULT_FILE);
@@ -387,6 +428,7 @@ async function processLivRouterAccountStandalone(
             accessToken,
             sessionId,
             affCode: userAffCode,
+            refreshToken,
             apiKey
         };
     } catch (error) {
@@ -399,6 +441,54 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
     const { accessToken, sessionId, userId, email } = masterCredentials;
     const axiosInstance = createAxiosInstance(null, log);
     
+    log(`[Worker ${workerIndex}] Refreshing master token before transfer...`);
+    
+    let currentAccessToken = accessToken;
+    
+    if (masterCredentials.refreshToken) {
+        try {
+            const refreshResponse = await axiosRequestWithRetry(
+                axiosInstance,
+                "POST",
+                `${BASE_URL}/api/gateway/user/auth/refresh`,
+                {
+                    headers: {
+                        "x-auth-session": sessionId,
+                        "accept": "*/*",
+                        "referer": `${BASE_URL}/dashboard/profile`,
+                        "content-type": "application/json",
+                        "cache-control": "no-cache",
+                        "pragma": "no-cache",
+                        "cookie": `new_api_refresh=${masterCredentials.refreshToken}`
+                    }
+                },
+                log
+            );
+
+            if (refreshResponse.status === 200 && refreshResponse.data?.data?.access_token) {
+                currentAccessToken = refreshResponse.data.data.access_token;
+                masterCredentials.accessToken = currentAccessToken;
+                log(`[Worker ${workerIndex}] Token refreshed successfully`);
+                
+                const setCookieHeader = refreshResponse.headers['set-cookie'];
+                if (setCookieHeader) {
+                    const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : setCookieHeader.toString();
+                    const newRefreshMatch = setCookieStr.match(/new_api_refresh=([^;]+)/);
+                    if (newRefreshMatch) {
+                        masterCredentials.refreshToken = newRefreshMatch[1];
+                        log(`[Worker ${workerIndex}] Refresh token updated`);
+                    }
+                }
+            } else {
+                log(`[Worker ${workerIndex}] ⚠️  Token refresh failed, continuing with existing token`);
+            }
+        } catch (refreshError) {
+            log(`[Worker ${workerIndex}] ⚠️  Token refresh error: ${refreshError.message}, continuing with existing token`);
+        }
+    } else {
+        log(`[Worker ${workerIndex}] ⚠️  No refresh token available, using existing access token`);
+    }
+    
     log(`[Worker ${workerIndex}] Checking master ${email} affiliate balance...`);
     
     const response = await axiosRequestWithRetry(
@@ -407,7 +497,7 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
         `${BASE_URL}/api/gateway/user/self`,
         {
             headers: {
-                "authorization": `Bearer ${accessToken}`,
+                "authorization": `Bearer ${currentAccessToken}`,
                 "x-auth-session": sessionId,
                 "new-api-user": String(userId),
                 "accept": "*/*",
@@ -421,10 +511,11 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
     );
     
     if (response.status !== 200) {
+        log(JSON.stringify(response.data))
         throw new Error(`Failed to get master user info: HTTP ${response.status}`);
     }
     
-    const affBalance = response.data.data?.aff_count || 0;
+    const affBalance = response.data.data?.aff_quota || 0;
     
     if (affBalance <= 0) {
         throw new Error(`No affiliate balance to transfer (balance: ${affBalance})`);
@@ -434,7 +525,7 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
     
     await transferAffiliateReward(
         axiosInstance,
-        accessToken,
+        currentAccessToken,
         sessionId,
         userId,
         affBalance,
@@ -981,6 +1072,8 @@ async function runLivRouterPoolMode(
     if (!sharedProgress) {
         console.log("");
         console.log(`🎯 LivRouter Pool Mode: 1 master + ${workerCount} workers`);
+        console.log("   Workers: 5 credits each");
+        console.log(`   Master: 3 + (2 × ${workerCount}) = ${3 + (workerCount * 2)} credits total`);
         console.log("   Master will collect affiliate rewards from all workers");
         console.log("   ⚠️  Transfer failure will abort entire process");
         console.log("");
@@ -1090,7 +1183,7 @@ async function runLivRouterPoolMode(
             masterCredentials = await processLivRouterAccountStandalone(
                 masterAccount,
                 null,
-                `Master Account ${workerCount * 3} credit`,
+                `Master \${userId} (${3 + (workerCount * 2)} Credit)`,
                 0,
                 useProxy,
                 logger.log,
@@ -1157,7 +1250,7 @@ async function runLivRouterPoolMode(
                 await processLivRouterAccountStandalone(
                     workerAccount,
                     masterCredentials.affCode,
-                    "Worker Account 3 Credit",
+                    `Worker \${userId} (5 Credit)`,
                     (i + 1) % config.browserArgsSets.length,
                     useProxy,
                     logger.log,

@@ -1,4 +1,6 @@
 const { getConfig } = require('../../config');
+const { sleep } = require('../../utils');
+const { clearBrowserCookies, tryClickText } = require('../../browser/helpers');
 
 class NineRouter {
     constructor(baseUrl, password, provider = null) {
@@ -193,35 +195,6 @@ function expandSsoCookies(cookies) {
     }
     
     return out;
-}
-
-async function tryClickText(page, text, timeout = 5000) {
-    const sels = [
-        `button::-p-text(${text})`,
-        `a::-p-text(${text})`,
-        `[role="button"]::-p-text(${text})`,
-        `::-p-text(${text})`,
-    ];
-    
-    for (const sel of sels) {
-        try {
-            await page.locator(sel).setTimeout(timeout).click({ delay: 30 });
-            return true;
-        } catch {
-        }
-    }
-    return false;
-}
-
-async function sleep(ms) {
-    return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function clearBrowserCookies(browser) {
-    const pages = await browser.pages();
-    const page = pages.length > 0 ? pages[0] : await browser.newPage();
-    const client = await page.createCDPSession();
-    await client.send('Network.clearBrowserCookies');
 }
 
 async function addAccountToRouter(accountData, browser, log, provider = 'grok-cli') {

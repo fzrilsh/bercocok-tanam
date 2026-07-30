@@ -1,6 +1,8 @@
 const axios = require("axios");
 const { generatePlusAddress } = require("./gmail-helper");
 const { getConfig } = require("../../config");
+const { randomUA } = require("../../utils");
+const { generateRandomString } = require("../../utils/string");
 
 // Provider 1: ncaori.my.id domains (stateless)
 const NCAORI_DOMAINS = [
@@ -36,24 +38,6 @@ const NCAORI_DOMAINS = [
 const SECEMAIL_DOMAINS = ["gaziw.com", "sakibbd.xyz"];
 
 let emailCounter = 0;
-
-function generateRandomString(length) {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-    let result = "";
-    for (let i = 0; i < length; i++) {
-        result += chars.charAt(Math.floor(Math.random() * chars.length));
-    }
-    return result;
-}
-
-function randomUA() {
-    const uas = [
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36",
-    ];
-    return uas[Math.floor(Math.random() * uas.length)];
-}
 
 /**
  * Create temp email via ncaori.my.id (stateless provider)

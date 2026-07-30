@@ -89,15 +89,6 @@ function writeCounter(count) {
     } catch {}
 }
 
-function generateRandomString(length) {
-    const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-    let result = "";
-    for (let i = 0; i < length; i++) {
-        result += chars[Math.floor(Math.random() * chars.length)];
-    }
-    return result;
-}
-
 function generatePlusAddress(accountIndex = null, prefix = "github") {
     const base = getBaseAddress();
     if (!base) throw new Error("GMAIL_BASE_ADDRESS not configured");
