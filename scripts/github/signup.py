@@ -415,7 +415,7 @@ chrome.webRequest.onAuthRequired.addListener(
             print("🔥 Loading warm cookies from previous signup...")
             
             # Navigate to GitHub first to set domain
-            self.driver.get('https://github.com')
+            self.driver.get('https://github.com/signup')
             self.sleep(2)
             
             with open(WARM_COOKIES_FILE, 'r') as f:
@@ -482,7 +482,7 @@ chrome.webRequest.onAuthRequired.addListener(
             self.driver.execute_script(f"window.scrollBy(0, {random.randint(0, 100)});")
         except:
             pass
-        self.sleep(0.5, 1.5)
+        self.sleep(0.5, 1.0)
         
         # Random mouse movement - use smaller offset to avoid out of bounds
         try:
@@ -655,7 +655,6 @@ chrome.webRequest.onAuthRequired.addListener(
             print("  ├─ Headed mode (browser visible)")
         
         # Use isolated user data directory to avoid conflicts between runs
-        import uuid
         user_data_dir = tempfile.mkdtemp(prefix='chrome_profile_')
         options.add_argument(f'--user-data-dir={user_data_dir}')
         self.user_data_dir = user_data_dir
@@ -808,15 +807,14 @@ chrome.webRequest.onAuthRequired.addListener(
         print("\n📝 Starting GitHub signup form...")
         
         print("  ├─ Navigating to https://github.com/signup...")
-        self.driver.get('https://github.com/signup')
-        self.sleep(3, 5)
+        # self.driver.get('https://github.com/signup')
+        # self.sleep(0.5, 1.0)
         
-        print("  ├─ Checking for bot detection challenges...")
-        self.wait_for_github_challenge(20)
+        # print("  ├─ Checking for bot detection challenges...")
+        # self.wait_for_github_challenge(20)
         
         print("  ├─ Adding human-like behavior...")
         self.add_human_behavior()
-        self.sleep(1, 2)
         
         # Fill email
         print(f"\n  ├─ [EMAIL] Waiting for email field...")
@@ -825,15 +823,15 @@ chrome.webRequest.onAuthRequired.addListener(
         )
         print(f"  ├─ [EMAIL] Field found, clicking...")
         email_input.click()
-        self.sleep(0.3, 0.5)
+        # self.sleep(0.3, 0.5)
         
         print(f"  ├─ [EMAIL] Typing: {email}")
         for char in email:
             email_input.send_keys(char)
-            self.sleep(0.01, 0.5)
+            self.sleep(0.01)
         print(f"  ├─ [EMAIL] ✅ Email entered")
         
-        self.sleep(1, 1.5)
+        # self.sleep(0.5, 1.0)
         self.add_human_behavior()
         
         # Fill password
@@ -843,15 +841,15 @@ chrome.webRequest.onAuthRequired.addListener(
         )
         print(f"  ├─ [PASSWORD] Field found, clicking...")
         password_input.click()
-        self.sleep(0.3, 0.5)
+        # self.sleep(0.3, 0.5)
         
         print(f"  ├─ [PASSWORD] Typing password ({len(password)} characters)...")
         for char in password:
             password_input.send_keys(char)
-            self.sleep(0.01, 0.05)
+            self.sleep(0.01)
         print(f"  ├─ [PASSWORD] ✅ Password entered")
         
-        self.sleep(1, 1.5)
+        # self.sleep(0.5, 1.0)
         self.add_human_behavior()
         
         # Fill username
@@ -861,15 +859,15 @@ chrome.webRequest.onAuthRequired.addListener(
         )
         print(f"  ├─ [USERNAME] Field found, clicking...")
         username_input.click()
-        self.sleep(0.3, 0.5)
+        # self.sleep(0.3, 0.5)
         
         print(f"  ├─ [USERNAME] Typing: {username}")
         for char in username:
             username_input.send_keys(char)
-            self.sleep(0.01, 0.05)
+            self.sleep(0.01)
         print(f"  ├─ [USERNAME] ✅ Username entered")
         
-        self.sleep(1, 1.5)
+        # self.sleep(1, 1.5)
         self.add_human_behavior()
         
         # Uncheck Copilot opt-in if checked
@@ -877,7 +875,7 @@ chrome.webRequest.onAuthRequired.addListener(
         try:
             copilot_checkbox = self.driver.find_element(By.CSS_SELECTOR, 'input#user_signup\\[copilot_opt_in\\]')
             if copilot_checkbox.is_selected():
-                self.sleep(0.5, 0.8)
+                # self.sleep(0.3, 0.5)
                 copilot_checkbox.click()
                 print("  ├─ [CHECKBOXES] ✅ Copilot checkbox unchecked")
         except Exception as e:
@@ -887,7 +885,7 @@ chrome.webRequest.onAuthRequired.addListener(
         try:
             marketing_checkbox = self.driver.find_element(By.CSS_SELECTOR, 'input#user_signup\\[marketing_consent\\]')
             if marketing_checkbox.is_selected():
-                self.sleep(0.5, 0.8)
+                # self.sleep(0.3, 0.5)
                 marketing_checkbox.click()
                 print("  ├─ [CHECKBOXES] ✅ Marketing checkbox unchecked")
         except Exception as e:
@@ -951,7 +949,7 @@ chrome.webRequest.onAuthRequired.addListener(
             print(f"  ├─ Could not get page info: {e}")
         
         print("  ├─ Checking for challenges after submit...")
-        self.wait_for_github_challenge(60)
+        # self.wait_for_github_challenge(60)
         
         # Auto-save cookies after successful form submission
         self.auto_save_cookies("form_submission")
@@ -960,9 +958,9 @@ chrome.webRequest.onAuthRequired.addListener(
     
     def enter_otp(self, otp_code):
         print("Waiting for OTP input fields...")
-        self.sleep(2, 3)
+        self.sleep(0.5, 1.0)
         
-        self.wait_for_github_challenge(60)
+        # self.wait_for_github_challenge(60)
         self.add_human_behavior()
         
         # Save warm cookies at OTP step (successful signup so far)
@@ -975,23 +973,23 @@ chrome.webRequest.onAuthRequired.addListener(
             input_field = WebDriverWait(self.driver, 30).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, f'input#launch-code-{i}'))
             )
-            self.sleep(0.1, 0.3)
+            # self.sleep(0.1, 0.3)
             input_field.click()
-            self.sleep(0.01, 0.05)
+            # self.sleep(0.01, 0.05)
             input_field.send_keys(digits[i])
             self.sleep(0.2, 0.5)
         
         print("Waiting for auto-submit or clicking continue...")
-        self.sleep(3, 4)
+        # self.sleep(3, 4)
         self.add_human_behavior()
         
-        try:
-            continue_btn = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((By.XPATH, '//button[contains(text(), "Continue")]'))
-            )
-            continue_btn.click()
-        except TimeoutException:
-            print("Continue button not found or already auto-submitted")
+        # try:
+        #     continue_btn = WebDriverWait(self.driver, 5).until(
+        #         EC.element_to_be_clickable((By.XPATH, '//button[contains(text(), "Continue")]'))
+        #     )
+        #     continue_btn.click()
+        # except TimeoutException:
+        #     print("Continue button not found or already auto-submitted")
         
         print("Waiting for redirect to dashboard...")
         WebDriverWait(self.driver, 60).until(
