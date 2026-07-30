@@ -235,6 +235,56 @@ async function processLivRouterAccount(
     );
 }
 
+async function processLivRouterAccount(
+    account,
+    browserArgsIndex,
+    accountIndex,
+    log,
+    updateProgress,
+    useProxy = true,
+    previousUserCredentials = null
+) {
+    const config = getConfig();
+    const { acquireProxy, releaseProxy } = require("../../utils");
+    
+    let poolProxy = null;
+    let proxy = account.proxy || null;
+
+    if (!proxy && config.proxyPoolFile && useProxy) {
+        poolProxy = await acquireProxy(log, updateProgress);
+        proxy = poolProxy;
+    }
+
+    try {
+        const affCode = previousUserCredentials?.affCode || null;
+        const customRouterName = `LivRouter Account ${accountIndex + 1} \${userId} (5 Credit)`;
+        
+        const userCredentials = await processLivRouterAccountStandalone(
+            account,
+            affCode,
+            customRouterName,
+            browserArgsIndex,
+            useProxy,
+            log,
+            updateProgress
+        );
+
+        if (poolProxy) {
+            releaseProxy(poolProxy);
+            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+        }
+
+        return userCredentials;
+
+    } catch (error) {
+        if (poolProxy) {
+            releaseProxy(poolProxy);
+            log(`[Proxy] Released: ${poolProxy.split(':')[0]}`);
+        }
+        throw error;
+    }
+}
+
 async function processLivRouterAccountStandalone(
     githubAccount,
     affCode,
@@ -1404,4 +1454,5 @@ module.exports = {
     runLivRouterAutomation,
     runLivRouterCreateAndImport,
     runLivRouterPoolMode,
+    processLivRouterAccountStandalone,
 };

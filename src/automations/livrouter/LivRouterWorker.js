@@ -8,6 +8,7 @@ const { STEPS } = require("../../cli/progress");
 const BaseWorker = require("../base/BaseWorker");
 const { createAxiosInstance, axiosRequestWithRetry } = require("../shared/http-client");
 const oauth = require("../shared/oauth");
+const { processLivRouterAccountStandalone } = require("./index");
 
 const BASE_URL = "https://livrouter.com";
 const GITHUB_CLIENT_ID = "Ov23lizY0ILAlo5BAEBa";
@@ -118,83 +119,31 @@ class LivRouterWorker extends BaseWorker {
     }
 
     async processAccountOnce(account, browserArgsIndex, workerIndex, log, updateProgress, proxy, poolProxy, affCode) {
-        const config = getConfig();
-        let browser = null;
-        let apiKey = null;
         let returnedAffCode = null;
 
-        const axiosInstance = createAxiosInstance(proxy, log);
-
         try {
-            updateProgress({ step: STEPS.LAUNCHING, email: account.email });
-            log(`Launching browser for ${account.email}`);
+            const customRouterName = `LivRouter Worker ${workerIndex + 1} \${userId} (5 Credit)`;
+            
+            const userCredentials = await processLivRouterAccountStandalone(
+                account,
+                affCode,
+                customRouterName,
+                browserArgsIndex,
+                proxy ? true : false,
+                log,
+                updateProgress
+            );
 
-            const browserResult = await launchBrowser(browserArgsIndex, workerIndex, null);
-            browser = browserResult.browser;
-            const page = browserResult.page;
-
-            try {
-                updateProgress({ step: STEPS.NAVIGATING });
-                const oauthUrl = oauth.buildGitHubOAuthUrl(
-                    GITHUB_CLIENT_ID,
-                    `${BASE_URL}/oauth/github`,
-                    null,
-                    { affCode }
-                );
-
-                updateProgress({ step: STEPS.GOOGLE_LOGIN });
-                const { cookies } = await this.executeGitHubOAuthAndIntercept(
-                    page,
-                    account,
-                    oauthUrl,
-                    null,
-                    log,
-                );
-
-                updateProgress({ step: STEPS.WAITING });
-                const localStorageData = await this.extractAuthFromLocalStorage(page, log);
-
-                let accessToken = localStorageData.accessToken;
-                const sessionId = localStorageData.sessionId;
-                let userId = localStorageData.userId;
-
-                updateProgress({ step: STEPS.HARVESTING });
-
-                if (!userId) {
-                    const userInfo = await this.getUserInfo(axiosInstance, cookies, null, log);
-                    userId = userInfo.userId;
-                    returnedAffCode = userInfo.affCode;
-                } else {
-                    log(`Using userId from localStorage: ${userId}`);
-                }
-
-                if (!accessToken) {
-                    const refreshResult = await this.refreshAccessToken(axiosInstance, sessionId, log);
-                    accessToken = refreshResult.accessToken;
-                }
-
-                await this.createToken(axiosInstance, accessToken, sessionId, userId, log);
-                const tokenId = await this.getTokenId(axiosInstance, accessToken, sessionId, userId, log);
-
-                updateProgress({ step: STEPS.GETTING_TOKEN });
-                apiKey = await this.revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log);
-                this.saveApiKey(account.email, userId, apiKey, log);
-
-                updateProgress({ step: STEPS.IMPORTING });
-                try {
-                    await this.registerToRouter(userId, apiKey, returnedAffCode, log);
-                } catch (importErr) {
-                    log(`Router import failed (continuing): ${importErr.message}`);
-                }
-
-                await sleep(config.delays.beforeBrowserClose);
-            } finally {
-                if (browser) {
-                    await browser.close().catch(() => {});
-                }
+            returnedAffCode = userCredentials.affCode;
+            
+            log(`✅ Account ${account.email} processed successfully`);
+            if (returnedAffCode) {
+                log(`Affiliate code for chaining: ${returnedAffCode}`);
             }
-        } finally {
-            // Cleanup handled by wrapper
+
+        } catch (error) {
+            log(`❌ Account ${account.email} failed: ${error.message}`);
+            throw error;
         }
 
         return returnedAffCode;
