@@ -55,31 +55,47 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
         log("Authorization button found, clicking and waiting for OAuth callback...");
         await sleep(2000);
 
-        // Click and wait for navigation to callback URL (browser will load callback page)
         try {
-            await Promise.all([
-                page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }),
-                page.click('button[name="authorize"][value="1"]', { delay: 100 }),
-            ]);
-            log("✅ Authorization completed, navigated to callback");
-        } catch (err) {
-            log(`Click with navigation failed: ${err.message}, trying JavaScript click...`);
+            let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
 
-            // Try JavaScript click as fallback
-            try {
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }),
-                    page.evaluate(() => {
-                        const btn = document.querySelector('button[name="authorize"][value="1"]');
-                        if (btn) {btn.click();}
-                    }),
-                ]);
-                log("✅ Authorization completed via JavaScript click");
-            } catch (err2) {
-                log(`⚠️  All click methods failed: ${err2.message}`);
-                throw new Error("Failed to complete authorization");
-            }
+            await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 });
+            await page.click(authorizeButtonSelector, { delay: 100 });
+
+            await page.waitForFunction((sel) => {
+                const btn = document.querySelector(sel);
+                return btn && !btn.disabled;
+            }, { timeout: 15000 }, authorizeButtonSelector);
+
+            await page.click(authorizeButtonSelector, { delay: 100 });
+        } catch (_) {
+            throw new Error("Failed to complete authorization");
         }
+
+        // Click and wait for navigation to callback URL (browser will load callback page)
+        // try {
+        //     await Promise.all([
+        //         page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }),
+        //         page.click('button[name="authorize"][value="1"]', { delay: 100 }),
+        //     ]);
+        //     log("✅ Authorization completed, navigated to callback");
+        // } catch (err) {
+        //     log(`Click with navigation failed: ${err.message}, trying JavaScript click...`);
+
+        //     // Try JavaScript click as fallback
+        //     try {
+        //         await Promise.all([
+        //             page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }),
+        //             page.evaluate(() => {
+        //                 const btn = document.querySelector('button[name="authorize"][value="1"]');
+        //                 if (btn) { btn.click(); }
+        //             }),
+        //         ]);
+        //         log("✅ Authorization completed via JavaScript click");
+        //     } catch (err2) {
+        //         log(`⚠️  All click methods failed: ${err2.message}`);
+        //         throw new Error("Failed to complete authorization");
+        //     }
+        // }
     } else {
         log("No authorization button found - assuming already authorized");
         log("Waiting for automatic redirect to callback...");
@@ -196,6 +212,29 @@ function buildAuthHeaders(accessToken, sessionId, userId) {
     };
 }
 
+async function processLivRouterAccount(
+    githubAccount,
+    browserArgsIndex,
+    accountIndex,
+    log,
+    updateProgress,
+    useProxy,
+    previousUserCredentials
+) {
+    const affCode = previousUserCredentials?.affCode || null;
+    const customRouterName = `LivRouter Account ${accountIndex + 1} \${userId} (5 Credit)`;
+    
+    return await processLivRouterAccountStandalone(
+        githubAccount,
+        affCode,
+        customRouterName,
+        browserArgsIndex,
+        useProxy,
+        log,
+        updateProgress
+    );
+}
+
 async function processLivRouterAccountStandalone(
     githubAccount,
     affCode,
@@ -208,13 +247,13 @@ async function processLivRouterAccountStandalone(
     const { launchBrowser } = require("../../browser");
     const { createRouter } = require("../../providers/router");
     const fs = require("fs");
-    
+
     log(`Processing account: ${githubAccount.email} (affCode: ${affCode || "none"})`);
-    
+
     const browserResult = await launchBrowser(browserArgsIndex, 0, null);
     const browser = browserResult.browser;
     const page = browserResult.page;
-    
+
     try {
         let loginUrl = `${BASE_URL}/login`;
         if (affCode) {
@@ -256,7 +295,7 @@ async function processLivRouterAccountStandalone(
             page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
             githubButton.asElement().click()
         ]);
-        
+
         log('Filling GitHub login form...');
         const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
         await emailInput.click();
@@ -289,30 +328,47 @@ async function processLivRouterAccountStandalone(
         if (buttonFound) {
             log('Authorization button found, clicking...');
             await sleep(2000);
+
             try {
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
-                    page.click('button[name="authorize"][value="1"]', { delay: 100 })
-                ]);
+                let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
+
+                await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 });
+                await page.click(authorizeButtonSelector, { delay: 100 });
+
+                await page.waitForFunction((sel) => {
+                    const btn = document.querySelector(sel);
+                    return btn && !btn.disabled;
+                }, { timeout: 15000 }, authorizeButtonSelector);
+
+                await page.click(authorizeButtonSelector, { delay: 100 });
                 log('✅ Authorization completed');
-            } catch (err) {
-                log(`Authorization click failed: ${err.message}, trying JavaScript click...`);
-                await Promise.all([
-                    page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
-                    page.evaluate(() => {
-                        const btn = document.querySelector('button[name="authorize"][value="1"]');
-                        if (btn) btn.click();
-                    })
-                ]);
-                log('✅ Authorization completed via JavaScript click');
+            } catch (_) {
+                throw new Error("Failed to complete authorization");
             }
+            // try {
+            //     await Promise.all([
+            //         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+            //         page.click('button[name="authorize"][value="1"]', { delay: 100 })
+            //     ]);
+            //     log('✅ Authorization completed');
+            // } catch (err) {
+            //     log(`Authorization click failed: ${err.message}, trying JavaScript click...`);
+            //     await Promise.all([
+            //         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
+            //         page.evaluate(() => {
+            //             const btn = document.querySelector('button[name="authorize"][value="1"]');
+            //             if (btn) btn.click();
+            //         })
+            //     ]);
+            //     log('✅ Authorization completed via JavaScript click');
+            // }
         } else {
             log('No authorization button - assuming already authorized');
-            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => {});
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => { });
         }
 
         await sleep(3000);
-        
+
         const finalUrl = page.url();
         log(`Final URL after OAuth: ${finalUrl}`);
 
@@ -377,12 +433,12 @@ async function processLivRouterAccountStandalone(
         await createToken(axiosInstance, accessToken, sessionId, userId, log);
         const tokenId = await getTokenId(axiosInstance, accessToken, sessionId, userId, log);
         const apiKey = await revealApiKey(axiosInstance, tokenId, accessToken, sessionId, userId, log);
-        
+
         const { ok, router, error } = await createRouter(null, log);
         if (!ok) {
             throw new Error(`Router ${error}`);
         }
-        
+
         const providerNodeId = await router.ensureProviderNode(
             "LivRouter",
             "livrouter",
@@ -390,18 +446,18 @@ async function processLivRouterAccountStandalone(
             "https://livrouter.com/api/v1",
             "openai-compatible"
         );
-        
+
         const finalRouterName = customRouterName.replace(/\$\{userId\}/g, String(userId));
-        
+
         await router.importProvider(
             providerNodeId,
             finalRouterName,
             apiKey,
             { defaultModel: "@cf/meta/llama-3.3-70b-instruct-fp8-fast" }
         );
-        
+
         log(`✅ Account ${githubAccount.email} imported as "${finalRouterName}"`);
-        
+
         log('Navigating to auth/refresh to capture refresh token cookie...');
         await page.goto(`${BASE_URL}/api/gateway/user/auth/refresh`, { waitUntil: 'networkidle2' });
         await sleep(2000);
@@ -415,13 +471,13 @@ async function processLivRouterAccountStandalone(
         } else {
             log('⚠️  Warning: Could not capture refresh token cookie');
         }
-        
+
         const { ensureFileExists } = require("../../utils");
         ensureFileExists(RESULT_FILE);
         fs.appendFileSync(RESULT_FILE, `${githubAccount.email}|${userId}|${apiKey}\n`);
-        
+
         await browser.close();
-        
+
         return {
             email: githubAccount.email,
             userId,
@@ -432,7 +488,7 @@ async function processLivRouterAccountStandalone(
             apiKey
         };
     } catch (error) {
-        if (browser) await browser.close().catch(() => {});
+        if (browser) await browser.close().catch(() => { });
         throw error;
     }
 }
@@ -440,11 +496,11 @@ async function processLivRouterAccountStandalone(
 async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log) {
     const { accessToken, sessionId, userId, email } = masterCredentials;
     const axiosInstance = createAxiosInstance(null, log);
-    
+
     log(`[Worker ${workerIndex}] Refreshing master token before transfer...`);
-    
+
     let currentAccessToken = accessToken;
-    
+
     if (masterCredentials.refreshToken) {
         try {
             const refreshResponse = await axiosRequestWithRetry(
@@ -469,7 +525,7 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
                 currentAccessToken = refreshResponse.data.data.access_token;
                 masterCredentials.accessToken = currentAccessToken;
                 log(`[Worker ${workerIndex}] Token refreshed successfully`);
-                
+
                 const setCookieHeader = refreshResponse.headers['set-cookie'];
                 if (setCookieHeader) {
                     const setCookieStr = Array.isArray(setCookieHeader) ? setCookieHeader.join('; ') : setCookieHeader.toString();
@@ -488,9 +544,9 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
     } else {
         log(`[Worker ${workerIndex}] ⚠️  No refresh token available, using existing access token`);
     }
-    
+
     log(`[Worker ${workerIndex}] Checking master ${email} affiliate balance...`);
-    
+
     const response = await axiosRequestWithRetry(
         axiosInstance,
         "GET",
@@ -509,20 +565,20 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
         },
         log
     );
-    
+
     if (response.status !== 200) {
         log(JSON.stringify(response.data))
         throw new Error(`Failed to get master user info: HTTP ${response.status}`);
     }
-    
+
     const affBalance = response.data.data?.aff_quota || 0;
-    
+
     if (affBalance <= 0) {
         throw new Error(`No affiliate balance to transfer (balance: ${affBalance})`);
     }
-    
+
     log(`[Worker ${workerIndex}] Transferring ${affBalance} credits from ${email}...`);
-    
+
     await transferAffiliateReward(
         axiosInstance,
         currentAccessToken,
@@ -531,7 +587,7 @@ async function transferWorkerRewardToMaster(masterCredentials, workerIndex, log)
         affBalance,
         log
     );
-    
+
     log(`[Worker ${workerIndex}] ✅ Transfer successful: +${affBalance} credits to master balance`);
     return affBalance;
 }
@@ -876,7 +932,7 @@ async function runLivRouterCreateAndImport(
     const { createGitHubAccountViaPython } = require("../github");
 
     if (createCount <= 0) {
-        if (!sharedProgress) {console.log("Create count must be > 0");}
+        if (!sharedProgress) { console.log("Create count must be > 0"); }
         logger.close();
         return null;
     }
@@ -1142,7 +1198,7 @@ async function runLivRouterPoolMode(
     }
 
     logger.log("=== PHASE 1: Setting Up Master Account ===");
-    
+
     while (!masterCredentials) {
         try {
             masterCreationAttempts++;
@@ -1150,11 +1206,11 @@ async function runLivRouterPoolMode(
                 step: STEPS.LAUNCHING,
                 email: `${useExistingWorkers ? "Using existing" : "Creating"} master account (attempt ${masterCreationAttempts})...`,
             });
-            
+
             logger.log(`[Master] ${useExistingWorkers ? "Using existing" : "Creation"} attempt ${masterCreationAttempts}...`);
 
             let masterAccount;
-            
+
             if (useExistingWorkers) {
                 masterAccount = existingAccounts[0];
                 logger.log(`[Master] Using existing GitHub account: ${masterAccount.email}`);
@@ -1292,11 +1348,11 @@ async function runLivRouterPoolMode(
                     logger.log(`❌ TRANSFER FAILED for worker ${i + 1} - ABORTING POOL MODE`);
                     logger.log(`   Error: ${error.message}`);
                     logger.close();
-                    
+
                     if (!sharedProgress) {
                         progress.stop();
                     }
-                    
+
                     throw new Error(`Transfer failed for worker ${i + 1}: ${error.message}`);
                 }
 
