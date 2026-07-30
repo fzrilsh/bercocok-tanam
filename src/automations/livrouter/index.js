@@ -12,165 +12,6 @@ const BASE_URL = "https://livrouter.com";
 const GITHUB_CLIENT_ID = "Ov23lizY0ILAlo5BAEBa";
 const RESULT_FILE = path.join(ROOT_DIR, "livrouter_keys.txt");
 
-async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthState, log) {
-    log("Phase 1: Starting GitHub OAuth flow (browser will complete callback)...");
-
-    log("Navigating to GitHub OAuth URL...");
-    await page.goto(oauthUrl, { waitUntil: "networkidle2" });
-
-    log("Filling GitHub login form...");
-    const emailInput = await page.waitForSelector("input#login_field", { timeout: 15000, visible: true });
-    await emailInput.click();
-    await sleep(300);
-    await emailInput.evaluate((el) => el.value = "");
-    await emailInput.type(account.email, { delay: 80 });
-
-    const passwordInput = await page.waitForSelector("input#password", { timeout: 5000, visible: true });
-    await passwordInput.click();
-    await sleep(300);
-    await passwordInput.evaluate((el) => el.value = "");
-    await passwordInput.type(account.password, { delay: 80 });
-
-    await sleep(500);
-    log("Submitting login form...");
-    await page.keyboard.press("Enter");
-
-    log("Waiting for navigation to authorization page...");
-    try {
-        await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 10000 });
-    } catch (navErr) {
-        log("Navigation wait timeout (continuing anyway)");
-    }
-
-    log("Waiting for authorization page...");
-
-    // Try to find authorization button (OPTIONAL - might already be authorized)
-    log("Checking for Authorize button...");
-    const buttonFound = await page.waitForSelector('button[name="authorize"][value="1"]', {
-        timeout: 15000,
-        visible: true,
-    }).then(() => true).catch(() => false);
-
-    if (buttonFound) {
-        log("Authorization button found, clicking and waiting for OAuth callback...");
-        let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
-
-        try {
-            await page.evaluate((sel) => {
-                const btn = document.querySelector(sel);
-
-                if (btn) {
-                    btn.disabled = false;
-                    btn.click();
-                }
-            }, authorizeButtonSelector);
-
-            log('✅ Authorization completed');
-        } catch (_) {
-            throw new Error("Failed to complete authorization");
-        }
-    } else {
-        log("No authorization button found - assuming already authorized");
-        log("Waiting for automatic redirect to callback...");
-
-        // Wait for navigation to callback (should happen automatically if already authorized)
-        try {
-            await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 });
-            log("✅ Automatic redirect to callback completed");
-        } catch (err) {
-            log(`⚠️  No automatic redirect detected: ${err.message}`);
-        }
-    }
-
-    // At this point, browser should have loaded the callback page
-    // Wait for page to fully process the OAuth exchange
-    log("Waiting for callback page to complete OAuth exchange...");
-    await sleep(3000);
-
-    const finalUrl = page.url();
-    log(`Final URL after OAuth: ${finalUrl}`);
-
-    // Check if we ended up on an error page
-    if (finalUrl.includes("/error") || finalUrl.includes("mismatch")) {
-        const pageText = await page.evaluate(() => document.body.innerText).catch(() => "");
-        log("❌ OAuth flow ended on error page");
-        log(`Error page content: ${pageText.substring(0, 300)}`);
-        throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
-    }
-
-    // Extract all cookies from browser (includes new session cookie from OAuth)
-    const cookies = await page.cookies();
-    log(`Extracted ${cookies.length} cookie(s) from browser after OAuth`);
-
-    // Convert cookies to cookie string for axios
-    const cookieString = cookies.map((c) => `${c.name}=${c.value}`).join("; ");
-
-    if (!cookieString) {
-        throw new Error("No cookies found in browser after OAuth flow");
-    }
-
-    log("✅ GitHub OAuth flow completed successfully!");
-    log(`Session cookies: ${cookieString.substring(0, 60)}...`);
-    return { cookies: cookieString };
-}
-
-async function getUserInfo(axiosInstance, sessionCookie, userId, log) {
-    log("Phase 2: Getting user info from session...");
-
-    const headers = {
-        "accept": "*/*",
-        "cookie": sessionCookie,
-        "referer": `${BASE_URL}/dashboard`,
-        "content-type": "application/json",
-        "cache-control": "no-cache",
-        "pragma": "no-cache",
-    };
-
-    // Add New-Api-User header if userId is provided
-    if (userId) {
-        headers["new-api-user"] = String(userId);
-        log(`Including New-Api-User header: ${userId}`);
-    } else {
-        log("⚠️  No userId provided, making request WITHOUT New-Api-User header");
-    }
-
-    // Log exact request details for debugging
-    log(`Request URL: ${BASE_URL}/api/gateway/user/self`);
-    log(`Cookie header: ${sessionCookie.substring(0, 100)}...`);
-    log(`All headers: ${JSON.stringify(headers, null, 2)}`);
-
-    const response = await axiosRequestWithRetry(
-        axiosInstance,
-        "GET",
-        `${BASE_URL}/api/gateway/user/self`,
-        { headers },
-        log,
-    );
-
-    log(`Response status: ${response.status}`);
-    log(`Response data: ${JSON.stringify(response.data)}`);
-
-    if (response.status !== 200) {
-        throw new Error(`Failed to get user info: HTTP ${response.status} - ${JSON.stringify(response.data)}`);
-    }
-
-    const data = response.data;
-
-    if (!data.success || !data.data?.id) {
-        throw new Error(`Invalid user info response: ${JSON.stringify(data)}`);
-    }
-
-    const returnedUserId = data.data.id;
-    const affCode = data.data.aff_code || null;
-
-    log(`User ID from API: ${returnedUserId}`);
-    if (affCode) {
-        log(`Affiliate code: ${affCode}`);
-    }
-
-    return { userId: returnedUserId, affCode };
-}
-
 function buildAuthHeaders(accessToken, sessionId, userId) {
     return {
         "authorization": `Bearer ${accessToken}`,
@@ -287,7 +128,7 @@ async function processLivRouterAccountStandalone(
         }
 
         await page.goto(loginUrl, { waitUntil: 'networkidle2' });
-        await sleep(1000);
+        // await sleep(1000);
 
         log('Checking consent checkbox...');
         const consentCheckbox = await page.$('.login-reference-consent input[type="checkbox"], .login-policy-consent input[type="checkbox"]');
@@ -322,15 +163,15 @@ async function processLivRouterAccountStandalone(
         log('Filling GitHub login form...');
         const emailInput = await page.waitForSelector('input#login_field', { timeout: 15000, visible: true });
         await emailInput.click();
-        await sleep(300);
+        // await sleep(300);
         await emailInput.evaluate(el => el.value = '');
-        await emailInput.type(githubAccount.email, { delay: 80 });
+        await emailInput.type(githubAccount.email, { delay: 10 });
 
         const passwordInput = await page.waitForSelector('input#password', { timeout: 5000, visible: true });
         await passwordInput.click();
-        await sleep(300);
+        // await sleep(300);
         await passwordInput.evaluate(el => el.value = '');
-        await passwordInput.type(githubAccount.password, { delay: 80 });
+        await passwordInput.type(githubAccount.password, { delay: 10 });
 
         await sleep(500);
         log('Submitting GitHub login form...');
@@ -368,10 +209,14 @@ async function processLivRouterAccountStandalone(
             }
         } else {
             log('No authorization button - assuming already authorized');
-            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => { });
         }
 
-        await sleep(3000);
+        log('Waiting for navigation to dashboard...');
+        try {
+            await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 20000 });
+        } catch (navErr) {
+            log('Navigation wait timeout, checking current URL...');
+        }
 
         const finalUrl = page.url();
         log(`Final URL after OAuth: ${finalUrl}`);
@@ -379,6 +224,20 @@ async function processLivRouterAccountStandalone(
         if (finalUrl.includes('/error') || finalUrl.includes('mismatch')) {
             const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
             throw new Error(`OAuth flow failed: ${pageText.substring(0, 100)}`);
+        }
+
+        log('Waiting for localStorage to be populated...');
+        try {
+            await page.waitForFunction(
+                () => {
+                    const data = localStorage.getItem('livrouter_user');
+                    return data !== null && data !== undefined && data !== '';
+                },
+                { timeout: 15000, polling: 500 }
+            );
+            log('✅ localStorage populated');
+        } catch (waitErr) {
+            log('⚠️ Timeout waiting for localStorage, attempting extraction anyway...');
         }
 
         log('Extracting user info from localStorage...');
@@ -464,7 +323,7 @@ async function processLivRouterAccountStandalone(
 
         log('Navigating to auth/refresh to capture refresh token cookie...');
         await page.goto(`${BASE_URL}/api/gateway/user/auth/refresh`, { waitUntil: 'networkidle2' });
-        await sleep(2000);
+        // await sleep(2000);
 
         const cookies = await page.cookies();
         const refreshCookie = cookies.find(c => c.name === 'new_api_refresh');
@@ -875,14 +734,7 @@ async function runLivRouterAutomation(sharedProgress = null, useProxy = true, op
         progress.addWorker(`livrouter-${i}`, chunk.length, `LivRouter W${i + 1}`);
     });
 
-    const worker = new LivRouterWorker(
-        executeGitHubOAuthAndIntercept,
-        getUserInfo,
-        createToken,
-        getTokenId,
-        revealApiKey,
-        refreshAccessToken,
-    );
+    const worker = new LivRouterWorker();
 
     const results = await Promise.all(
         chunks.map((chunk, i) => {
@@ -1383,6 +1235,8 @@ async function runLivRouterPoolMode(
         label: "LivRouter Pool Mode",
     }];
 
+    const workersTotalCredit = workerSuccessCount * 500000
+
     if (!sharedProgress) {
         console.log("═".repeat(80));
         console.log("🎯 LIVROUTER POOL MODE COMPLETE");
@@ -1391,13 +1245,13 @@ async function runLivRouterPoolMode(
         console.log(`   Master User ID: ${masterCredentials.userId}`);
         console.log(`   Affiliate Code: ${masterCredentials.affCode}`);
         console.log(`   Total Credits Transferred: ${totalTransferred}`);
-        console.log(`   Workers Successful: ${workerSuccessCount}/${workerCount}`);
+        console.log(`   Workers Successful: ${workerSuccessCount}/${workerCount} (${workersTotalCredit} Credit)`);
         console.log(`   Duration: ${formatDuration(totalDuration)}`);
         console.log("═".repeat(80));
         console.log(`📄 Log: ${logger.logFile}`);
         console.log("");
     } else {
-        logger.log(`Pool mode complete. Master: ${masterCredentials.email}, Workers: ${workerSuccessCount}, Credits: ${totalTransferred}`);
+        logger.log(`Pool mode complete. Master: ${masterCredentials.email}, Workers: ${workerSuccessCount}, Credits: ${totalTransferred} + ${workersTotalCredit}`);
     }
 
     logger.close();
