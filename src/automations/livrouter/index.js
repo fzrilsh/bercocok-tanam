@@ -53,49 +53,22 @@ async function executeGitHubOAuthAndIntercept(page, account, oauthUrl, oauthStat
 
     if (buttonFound) {
         log("Authorization button found, clicking and waiting for OAuth callback...");
-        await sleep(2000);
+        let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
 
         try {
-            let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
-
-            await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 });
-            await page.click(authorizeButtonSelector, { delay: 100 });
-
-            await page.waitForFunction((sel) => {
+            await page.evaluate((sel) => {
                 const btn = document.querySelector(sel);
-                return btn && !btn.disabled;
-            }, { timeout: 15000 }, authorizeButtonSelector);
 
-            await page.click(authorizeButtonSelector, { delay: 100 });
+                if (btn) {
+                    btn.disabled = false;
+                    btn.click();
+                }
+            }, authorizeButtonSelector);
+
+            log('✅ Authorization completed');
         } catch (_) {
             throw new Error("Failed to complete authorization");
         }
-
-        // Click and wait for navigation to callback URL (browser will load callback page)
-        // try {
-        //     await Promise.all([
-        //         page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }),
-        //         page.click('button[name="authorize"][value="1"]', { delay: 100 }),
-        //     ]);
-        //     log("✅ Authorization completed, navigated to callback");
-        // } catch (err) {
-        //     log(`Click with navigation failed: ${err.message}, trying JavaScript click...`);
-
-        //     // Try JavaScript click as fallback
-        //     try {
-        //         await Promise.all([
-        //             page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 }),
-        //             page.evaluate(() => {
-        //                 const btn = document.querySelector('button[name="authorize"][value="1"]');
-        //                 if (btn) { btn.click(); }
-        //             }),
-        //         ]);
-        //         log("✅ Authorization completed via JavaScript click");
-        //     } catch (err2) {
-        //         log(`⚠️  All click methods failed: ${err2.message}`);
-        //         throw new Error("Failed to complete authorization");
-        //     }
-        // }
     } else {
         log("No authorization button found - assuming already authorized");
         log("Waiting for automatic redirect to callback...");
@@ -223,7 +196,7 @@ async function processLivRouterAccount(
 ) {
     const affCode = previousUserCredentials?.affCode || null;
     const customRouterName = `LivRouter Account ${accountIndex + 1} \${userId} (5 Credit)`;
-    
+
     return await processLivRouterAccountStandalone(
         githubAccount,
         affCode,
@@ -246,7 +219,7 @@ async function processLivRouterAccount(
 ) {
     const config = getConfig();
     const { acquireProxy, releaseProxy } = require("../../utils");
-    
+
     let poolProxy = null;
     let proxy = account.proxy || null;
 
@@ -258,7 +231,7 @@ async function processLivRouterAccount(
     try {
         const affCode = previousUserCredentials?.affCode || null;
         const customRouterName = `LivRouter Account ${accountIndex + 1} \${userId} (5 Credit)`;
-        
+
         const userCredentials = await processLivRouterAccountStandalone(
             account,
             affCode,
@@ -377,41 +350,22 @@ async function processLivRouterAccountStandalone(
 
         if (buttonFound) {
             log('Authorization button found, clicking...');
-            await sleep(2000);
+            let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
 
             try {
-                let authorizeButtonSelector = 'button[name="authorize"][value="1"]';
-
-                await page.waitForNavigation({ waitUntil: "networkidle2", timeout: 15000 });
-                await page.click(authorizeButtonSelector, { delay: 100 });
-
-                await page.waitForFunction((sel) => {
+                await page.evaluate((sel) => {
                     const btn = document.querySelector(sel);
-                    return btn && !btn.disabled;
-                }, { timeout: 15000 }, authorizeButtonSelector);
 
-                await page.click(authorizeButtonSelector, { delay: 100 });
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.click();
+                    }
+                }, authorizeButtonSelector);
+
                 log('✅ Authorization completed');
             } catch (_) {
                 throw new Error("Failed to complete authorization");
             }
-            // try {
-            //     await Promise.all([
-            //         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
-            //         page.click('button[name="authorize"][value="1"]', { delay: 100 })
-            //     ]);
-            //     log('✅ Authorization completed');
-            // } catch (err) {
-            //     log(`Authorization click failed: ${err.message}, trying JavaScript click...`);
-            //     await Promise.all([
-            //         page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }),
-            //         page.evaluate(() => {
-            //             const btn = document.querySelector('button[name="authorize"][value="1"]');
-            //             if (btn) btn.click();
-            //         })
-            //     ]);
-            //     log('✅ Authorization completed via JavaScript click');
-            // }
         } else {
             log('No authorization button - assuming already authorized');
             await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 15000 }).catch(() => { });

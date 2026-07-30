@@ -1090,8 +1090,6 @@ def create_github_account(email, provider, csrf_token=None, cookies=None, headle
         print(f"Password: {password}")
         print(f"Username: {username}")
         
-        time.sleep(5)
-        
         return {
             'email': temp_email.email,
             'password': password,
