@@ -1118,6 +1118,8 @@ async function runLivRouterPoolMode(
     logger.log(`=== PHASE 2: Processing ${workerCount} Worker Accounts ===`);
     logger.log(`Workers will use master affiliate code: ${masterCredentials.affCode}`);
     logger.log("");
+    
+    await sleep(config.delays.betweenAccounts || 5000);
 
     for (let i = 0; i < workerCount; i++) {
         let workerSuccess = false;
